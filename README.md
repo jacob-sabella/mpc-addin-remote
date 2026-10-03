@@ -5,7 +5,7 @@ the screen live and drive it with a mouse or a finger. It's an **addin**: a smal
 start through `LD_PRELOAD`, running inside the MPC process. Nothing else is installed and no system binary is
 changed.
 
-It is also an **MCP server** (`http://<device>:8080/mcp`), so an AI model can see the screen, touch it, play MIDI into
+It is also an **MCP server** (`http://<device>:6720/mcp`), so an AI model can see the screen, touch it, play MIDI into
 MPC and read the device's status and files.
 
 **Status:** passes the offline tests (x86: unit, the HTTP server and the MCP endpoint under ASan+UBSan and TSan, the
@@ -14,7 +14,7 @@ symbols up to 2.31). Runs on an MPC: the HTTP routes, the web page and every MCP
 
 ## What it does
 
-- `http://<device>:8080/`: the live screen, scaled to the window. Click or drag on it to touch, with a half
+- `http://<device>:6720/`: the live screen, scaled to the window. Click or drag on it to touch, with a half
   resolution option for slow networks.
 - An HTTP API for scripts:
 
@@ -34,7 +34,7 @@ Coordinates are screen pixels (`/info` gives the size).
 2025-03-26 to 2025-11-25). Add it to a client, for example Claude Code:
 
 ```sh
-claude mcp add --transport http mpc http://<device>:8080/mcp
+claude mcp add --transport http mpc http://<device>:6720/mcp
 ```
 
 Tools:
@@ -110,7 +110,7 @@ An addin shares MPC's process, so it is written so that it can't hurt MPC:
 |---|---|---|
 | `enabled` | 1 | 0 keeps it loaded but idle |
 | `bind` | 0.0.0.0 | listen address. **There is no login:** anyone who can reach the port sees and touches the screen. Use `127.0.0.1` and an SSH tunnel on a network you don't trust |
-| `port` | 8080 | |
+| `port` | 6720 | |
 | `touch_device` | auto | or `/dev/input/eventN` |
 | `screen_rotate` | auto | the clockwise turn that shows the scanout upright: auto (portrait turns 90), 0, 90, 180, 270 |
 | `touch_rotate` | 0 | how the touch panel sits against the scanout: 0, 90, 180 or 270 |

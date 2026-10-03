@@ -18,7 +18,7 @@ run() { ADDIN_INSTALL_TEST=1 SYSTEMD_ROOT="$T/root" $SH "$T/pkg/$1" -y -t "$T/ad
 fail() { echo "FAIL installer: $1"; exit 1; }
 run install.sh
 grep -qx "Environment=LD_PRELOAD=/usr/lib/x.so:$T/addin/mpc_remote_addin.so" "$U" || fail "LD_PRELOAD: $(grep Env "$U")"
-[ -f "$T/addin/standalone" ] && grep -q "port=" "$T/addin/mpc_remote_addin.conf" && grep -q ":8080" "$T/out" || fail "files"
+[ -f "$T/addin/standalone" ] && grep -q "port=" "$T/addin/mpc_remote_addin.conf" && grep -q ":6720" "$T/out" || fail "files"
 echo "port=9000" > "$T/addin/mpc_remote_addin.conf"; run install.sh
 grep -qx "port=9000" "$T/addin/mpc_remote_addin.conf" || fail "settings not kept"
 ADDIN_INSTALL_TEST=1 SYSTEMD_ROOT="$T/root" $SH "$T/addin/uninstall.sh" -y -t "$T/addin" > "$T/out" 2>&1 || { cat "$T/out"; exit 1; }

@@ -46,7 +46,7 @@ int main(void)
 
     struct conf c;
     conf_defaults(&c);
-    CHECK(c.port == 8080 && c.screen_rotate == -1 && c.touch_rotate == 0 && c.enabled == 1 && !strcmp(c.touch_device, "auto"));
+    CHECK(c.port == 6720 && c.screen_rotate == -1 && c.touch_rotate == 0 && c.enabled == 1 && !strcmp(c.touch_device, "auto"));
     CHECK(conf_line(&c, "screen_rotate=180") == 0 && c.screen_rotate == 180);
     CHECK(conf_line(&c, "screen_rotate=auto") == 0 && c.screen_rotate == -1);
     CHECK(conf_line(&c, "touch_rotate=auto") && c.touch_rotate == 0);
