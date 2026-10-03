@@ -76,18 +76,19 @@ Settings are read when MPC starts.
 
 ## Install
 
-Needs root on the device (SSH). Copy `build/` (or a release folder) to the device and run:
+Needs root on the device (SSH). Unzip a release (`MPC-Remote-addin-<version>-mpc-armv7.zip`) on the device and run, as root,
+in its folder:
 
 ```sh
 sh install.sh            # asks first; -y doesn't ask, -n doesn't restart MPC, -t <folder> installs elsewhere
-sh uninstall.sh
+sh /data/mpc-addins/remote/uninstall.sh   # later, to remove it
 ```
 
 It installs into `/data/mpc-addins/remote/` (the root file system is often nearly full) and **adds** the `.so` to
 `LD_PRELOAD` in MPC's systemd service (`acvs`, or `inmusic-mpc`); other addins already in it stay. Reinstalling keeps
-your settings file; uninstalling takes only this addin out of the list. The scripts are the shared
-[mpc-addin-installer](../mpc-addin-installer) (identical in every addin; `addin.manifest` describes this one), whose
-README has the rules: why it edits the line that takes effect rather than adding a second `LD_PRELOAD=`, the backup
+your settings file; uninstalling takes only this addin out of the list. The scripts are the shared addin
+installer from [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins) (`tools/release/addin`; identical in every
+addin, `addin.manifest` describes this one). Its `docs/ADDINS.md` has the rules: why it edits the line that takes effect rather than adding a second `LD_PRELOAD=`, the backup
 it keeps, and the drop-in shared by all addins.
 
 If `/data` isn't mounted when MPC starts, the loader prints a warning and MPC starts without the addin.
@@ -107,14 +108,15 @@ MPC_REMOTE_ADDIN_CONF=/tmp/remote.conf ./standalone ./mpc_remote_addin.so
 ```sh
 ./build.sh          # build/mpc_remote_addin.so and build/standalone (armhf, Docker + QEMU, glibc <= 2.31 checked)
 tests/test.sh       # offline, on the build machine (x86)
+tools/release.sh 1.0.0   # dist/MPC-Remote-addin-1.0.0-mpc-armv7.zip, with the installer, checked as the catalog does
 ```
 
 `tests/test.sh` runs the unit tests, then `tests/test_remote.py` against the server built with ASan+UBSan and
 again with TSan. Test builds (`-DREMOTE_TEST`) can stand a raw file in for the display (`REMOTE_FAKE_FB`) and a
 file in for the touchscreen (`REMOTE_FAKE_TOUCH`); release builds can't. The test then preloads the real `.so` into
-a process named `MPC` and one named otherwise, and runs `tests/test_install.sh`: the installer with this manifest against a scratch systemd tree, and the
-copy here checked against mpc-addin-installer when it sits next to this repo (`BUSYBOX=/path/to/busybox` runs it in
-the device's shell).
+a process named `MPC` and one named otherwise, and runs `tests/test_install.sh`: the shared installer with this manifest against a scratch systemd tree
+(`BUSYBOX=/path/to/busybox` runs it in the device's shell). The installer and the release tool come from
+mpc-vst-plugins checked out next to this repo (or `MPC_VST=/path`).
 
 ## Not included
 
