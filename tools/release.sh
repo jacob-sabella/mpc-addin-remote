@@ -7,5 +7,5 @@ cd "$(dirname "$0")/.."
 [ $# -eq 1 ] || { echo "usage: $0 <version>" >&2; exit 2; }
 MPC_VST="${MPC_VST:-../mpc-vst-plugins}"
 python3 "$MPC_VST/tools/release_addin.py" --dir build --version "$1" --repo jacob-sabella/mpc-addin-remote --license MIT \
-  --about "The MPC screen in a browser: see it and touch it from a computer or phone on the same network." -o dist
+  --about "The MPC screen in a browser, and an MCP server so an AI model can see and touch it, play MIDI and read files." -o dist
 python3 "$MPC_VST/tools/catalog_check.py" dist/*-"$1"-mpc-armv7.zip --catalog --expect-id remote --expect-repo jacob-sabella/mpc-addin-remote

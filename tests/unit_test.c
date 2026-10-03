@@ -28,7 +28,7 @@ static void map(int rot, int x, int y, int ex, int ey)
 int main(void)
 {
     setenv("REMOTE_FAKE_TOUCH", "/dev/null", 1);
-    // rotation 90 is the Key 37's verified mapping: tx = y * 2048 / 800, ty = (1280 - x) * 2048 / 1280
+    // rotation 90, the MPC Key 37 mapping: tx = y * 2048 / 800, ty = (1280 - x) * 2048 / 1280
     map(90, 640, 400, 400 * 2048 / 800, (1280 - 640) * 2048 / 1280);
     map(90, 100, 700, 700 * 2048 / 800, (1280 - 100) * 2048 / 1280);
     map(90, 0, 0, 0, 2047);            // (1280 - 0) would be 2048: clamped to the panel's maximum

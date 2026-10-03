@@ -143,8 +143,7 @@ def run(exe, full):
               and ev[-1] == (EV_SYN, 0, 0), "tap presses, lifts and syncs")
         if full:
 
-            # stream: the first frame comes at once, then once more when the screen has not changed (a browser shows a
-            # part only once the next part arrives), and an unchanged screen sends nothing after that
+            # stream: the first frame, the same frame once more when the screen has not changed, then nothing
             s = socket.create_connection(("127.0.0.1", port), timeout=5)
             s.sendall(b"GET /stream HTTP/1.1\r\nHost: x\r\n\r\n")
             buf = b""

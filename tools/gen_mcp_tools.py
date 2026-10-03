@@ -54,7 +54,7 @@ TOOLS = [
           "grid": {"type": "boolean", "default": False,
                    "description": "Draw lines labelled with screen coordinates over the picture."}})),
     ("tap", "Tap", False,
-     "Tap the touchscreen at (x, y) with one finger, as a person would: buttons, tabs, menu and list items, pads and "
+     "Tap the touchscreen at (x, y): buttons, tabs, menu and list items, pads and "
      "fields on the screen." + CHANGED + " Only the touchscreen is reachable this way: for notes use play_notes.",
      obj({**xy(), "hold_ms": {"type": "integer", "minimum": 10, "maximum": 4000, "default": 80,
                               "description": "How long the finger stays down."},
@@ -122,7 +122,7 @@ TOOLS = [
      "Send one MIDI message into MPC: a note on or off, a control change, a program change, pitch bend, "
      "aftertouch, transport (start, stop, continue: MPC follows them only when it is set to receive MIDI clock), "
      "an MMC transport command (MPC follows those only when it is set to receive MMC), or raw system exclusive. "
-     + MIDI_PORT,
+     "Goes out on the addin's MIDI port, \"MPC Remote Out\"; play_notes says how MPC picks that port up.",
      obj({"type": {"type": "string", "enum": ["note_on", "note_off", "cc", "program_change", "pitch_bend",
                                               "channel_pressure", "poly_pressure", "start", "stop", "continue",
                                               "clock", "mmc", "sysex"]},
@@ -143,7 +143,8 @@ TOOLS = [
           "listen_ms": LISTEN}, ("type",))),
     ("midi_listen", "Listen to MIDI", True,
      "Collect the MIDI that arrives on the addin's input port, \"MPC Remote In\", for duration_ms: set a track's "
-     "MIDI output (or a plugin's) to it in MPC first. Lists each message with its time.",
+     "MIDI output (or a plugin's) to it in MPC first. Lists each message with its time; MIDI clock ticks are counted, "
+     "not listed.",
      obj({"duration_ms": {"type": "integer", "minimum": 100, "maximum": 30000, "default": 3000}})),
     ("midi_status", "MIDI status", True,
      "The addin's MIDI ports and what is connected to them (whether MPC has picked up MPC Remote Out yet), and the "
@@ -155,7 +156,7 @@ TOOLS = [
      obj({})),
     ("list_files", "List files", True,
      "List a folder on the device's storage (projects, samples, programs, settings): folders first, then files with "
-     "size and date. With no path, lists the folders files can be read from. Read-only.",
+     "size and date, at most 500 entries. With no path, lists the folders files can be read from. Read-only.",
      obj({"path": {"type": "string", "description": "An absolute folder path, inside the readable folders."}})),
     ("find_files", "Find files", True,
      "Find files and folders by name under a folder (or every readable folder): a shell pattern, case-insensitive, "

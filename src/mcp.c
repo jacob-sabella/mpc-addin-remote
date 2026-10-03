@@ -923,7 +923,7 @@ int mcp_handle(const char *body, size_t n, char **out, size_t *outlen)
         char method[64];
         if (id >= 0 && t[id].type != J_STR && t[id].type != J_NUM) id = -1;
         if (json_str(body, t, mi, method, sizeof method)) method[0] = 0;
-        if (mi < 0 || id < 0) {      // a response (to nothing we sent) or a notification (initialized, cancelled ...)
+        if (mi < 0 || id < 0) {      // a response (the server sends no requests) or a notification (initialized, cancelled ...)
             free(t);
             return 202;
         }

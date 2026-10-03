@@ -1,4 +1,4 @@
-// mpc-remote-addin: the MPC's screen and touchscreen over HTTP, and an MCP endpoint (/mcp, src/mcp.c) for models,
+// mpc-addin-remote: the MPC's screen and touchscreen over HTTP, and an MCP endpoint (/mcp, src/mcp.c) for models,
 // from inside the MPC process (LD_PRELOAD).
 // It starts only in the process whose executable is named MPC. The launch script and anything else that inherits
 // LD_PRELOAD load it and do nothing. Everything runs on the addin's own threads, at normal scheduling and a low
@@ -197,8 +197,8 @@ static void serve_stream(int fd, int scale, int fps)
                 last = png, last_len = len, again = 1;
             }
             if (r == 0 || (r == 2 && again)) {
-                // A browser shows a part only once the next part arrives, so the newest frame goes out a second time
-                // when the screen stops changing: otherwise the page shows the screen one change late (blank at first).
+                // A browser shows a multipart part only once the next one arrives, so the newest frame goes out a
+                // second time when the screen stops changing.
                 if (r == 2) again = 0;
                 char part[96];
                 int k = snprintf(part, sizeof part, "Content-Type: image/png\r\nContent-Length: %zu\r\n\r\n", last_len);
@@ -458,7 +458,7 @@ static void *server_thread(void *arg)
     return NULL;
 }
 
-// Start the server (once). The constructor calls it inside MPC; a test harness or a stand-alone runner can call
+// Start the server (once). The constructor calls it inside MPC; a test harness or the standalone runner can call
 // it directly. Returns 0 when the server thread is running or already was, -1 when disabled or it failed.
 __attribute__((visibility("default"))) int mpc_remote_addin_start(void)
 {

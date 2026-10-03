@@ -10,18 +10,18 @@ MPC and read the device's status and files.
 
 **Status:** passes the offline tests (x86: unit, the HTTP server and the MCP endpoint under ASan+UBSan and TSan, the
 official MCP Python SDK as a client, the preload gate, the installer under busybox) and builds for armhf (glibc
-symbols up to 2.17). The MCP tools have not yet been run on a device.
+symbols up to 2.31). Runs on an MPC: the HTTP routes, the web page and every MCP tool.
 
 ## What it does
 
 - `http://<device>:8080/`: the live screen, scaled to the window. Click or drag on it to touch, with a half
   resolution option for slow networks.
-- An HTTP API for scripts (the same routes as the earlier stand-alone `mpc-remote`, so its scripts keep working):
+- An HTTP API for scripts:
 
 | Route | |
 |---|---|
 | `GET /screen.png[?half=1]` | one frame as PNG |
-| `GET /stream[?half=1&fps=N]` | frames as `multipart/x-mixed-replace` PNGs (an unchanged screen sends nothing) |
+| `GET /stream[?half=1&fps=N]` | frames as `multipart/x-mixed-replace` PNGs (an unchanged screen sends nothing once its frame has gone out twice) |
 | `GET /tap?x=&y=[&hold=ms]` | touch and release (hold 10 to 4000 ms, default 90) |
 | `GET /down?x=&y=`, `/move?x=&y=`, `/up` | a drag |
 | `GET /info` | JSON: screen size and pixel format, capture state, the touch device, rotations, the last frame's capture and encode times |
