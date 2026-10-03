@@ -2,12 +2,13 @@
 #ifndef TOUCH_H
 #define TOUCH_H
 
-// Open the touchscreen: dev is a /dev/input/eventN path or "auto" (the first direct multitouch device that
-// isn't virtual). rotate (0, 90, 180, 270) is how the panel's axes sit against the screen. 0 on success.
+// Open the touchscreen: dev is a /dev/input/eventN path or "auto" (the first multitouch device that isn't virtual,
+// one that says it's on the screen first). rotate (0, 90, 180, 270) is how the panel's axes sit against the
+// scanout (normally 0: both are the physical panel). 0 on success.
 int touch_open(const char *dev, int rotate);
 // The device opened, or "none".
 const char *touch_device(void);
-// Screen pixel (x, y) on a w x h screen to panel coordinates.
+// Scanout pixel (x, y) on a w x h scanout to panel coordinates.
 void touch_map(int x, int y, int w, int h, int *tx, int *ty);
 void touch_down(int x, int y, int w, int h);
 void touch_move(int x, int y, int w, int h);

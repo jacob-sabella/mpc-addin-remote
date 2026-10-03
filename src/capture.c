@@ -6,6 +6,7 @@
 #include "capture.h"
 #include "drm_min.h"
 #include <errno.h>
+#include <stddef.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -35,6 +36,8 @@ static long long mapped_at;
 static uint32_t last_fmt;
 static uint8_t *row;         // one source row, copied out of the (uncached) buffer in one go
 static size_t rowsz;
+static int rotation = -1;    // quarter turn to upright, -1 auto
+static int last_ms;          // the last cap_frame()'s time
 
 static long long now_ns(void)
 {
@@ -197,12 +200,53 @@ static int current(struct fbmap **out)
     return 0;
 }
 
+void cap_set_rotation(int degrees)
+{
+    pthread_mutex_lock(&mtx);
+    rotation = degrees < 0 ? -1 : (degrees % 360) / 90 * 90;
+    pthread_mutex_unlock(&mtx);
+}
+
+// The quarter turn that makes a framebuffer upright: as set, or with auto a portrait scanout turns 90 degrees
+// (MPC's UI is landscape; a portrait panel shows it rotated). Called with mtx held.
+static int turn(const struct fbmap *m)
+{
+    return rotation >= 0 ? rotation : m->h > m->w ? 90 : 0;
+}
+
 int cap_size(int *w, int *h)
 {
     pthread_mutex_lock(&mtx);
     struct fbmap *m;
     int r = current(&m);
-    if (!r) { *w = (int)m->w; *h = (int)m->h; }
+    if (!r) {
+        int t = turn(m);
+        *w = (int)(t % 180 ? m->h : m->w);
+        *h = (int)(t % 180 ? m->w : m->h);
+    }
+    pthread_mutex_unlock(&mtx);
+    return r;
+}
+
+int cap_to_scanout(int x, int y, int *sx, int *sy, int *sw, int *sh)
+{
+    pthread_mutex_lock(&mtx);
+    struct fbmap *m;
+    int r = current(&m);
+    if (!r) {
+        int W = (int)m->w, H = (int)m->h, t = turn(m);
+        int uw = t % 180 ? H : W, uh = t % 180 ? W : H;   // the upright size
+        x = x < 0 ? 0 : x >= uw ? uw - 1 : x;
+        y = y < 0 ? 0 : y >= uh ? uh - 1 : y;
+        switch (t) {                                      // the inverse of the turn in cap_frame()
+        case 90:  *sx = y;         *sy = H - 1 - x; break;
+        case 180: *sx = W - 1 - x; *sy = H - 1 - y; break;
+        case 270: *sx = W - 1 - y; *sy = x;         break;
+        default:  *sx = x;         *sy = y;         break;
+        }
+        *sw = W;
+        *sh = H;
+    }
     pthread_mutex_unlock(&mtx);
     return r;
 }
@@ -211,11 +255,12 @@ int cap_frame(uint8_t *out, size_t outsz, int scale, int *ow, int *oh)
 {
     if (scale < 1) scale = 1;
     if (scale > 4) scale = 4;
+    long long t0 = now_ns();
     pthread_mutex_lock(&mtx);
     struct fbmap *m;
     int r = current(&m);
     if (r) { pthread_mutex_unlock(&mtx); return r; }
-    int W = (int)m->w / scale, H = (int)m->h / scale, bpp = bytes_per_pixel(m->fmt);
+    int W = (int)m->w / scale, H = (int)m->h / scale, bpp = bytes_per_pixel(m->fmt), t = turn(m);
     if ((size_t)W * H * 3 > outsz) { pthread_mutex_unlock(&mtx); return E_SMALL; }
     size_t need = (size_t)m->w * bpp;
     if (rowsz < need) {
@@ -224,33 +269,51 @@ int cap_frame(uint8_t *out, size_t outsz, int scale, int *ow, int *oh)
         row = nr;
         rowsz = need;
     }
-    uint8_t *o = out;
+    int OW = t % 180 ? H : W;                             // the upright frame's width
     for (int y = 0; y < H; y++) {
+        // source pixel (x, y) lands at out + d0 + x * dx: the scanout read row by row (fast on uncached memory),
+        // the turn done while writing into the (cached) output
+        ptrdiff_t d0, dx;
+        switch (t) {
+        case 90:  d0 = (ptrdiff_t)(H - 1 - y) * 3;                       dx = (ptrdiff_t)OW * 3;  break;
+        case 180: d0 = ((ptrdiff_t)(H - 1 - y) * OW + (W - 1)) * 3;      dx = -3;                 break;
+        case 270: d0 = ((ptrdiff_t)(W - 1) * OW + y) * 3;                dx = -(ptrdiff_t)OW * 3; break;
+        default:  d0 = (ptrdiff_t)y * OW * 3;                            dx = 3;                  break;
+        }
         memcpy(row, m->base + m->off + (size_t)y * scale * m->pitch, need);
         const uint8_t *s = row;
+        uint8_t *o = out + d0;
         size_t step = (size_t)scale * bpp;
         switch (m->fmt) {
         case FMT_XRGB8888: case FMT_ARGB8888:          // little-endian: B G R X in memory
-            for (int x = 0; x < W; x++, s += step) { o[0] = s[2]; o[1] = s[1]; o[2] = s[0]; o += 3; }
+            for (int x = 0; x < W; x++, s += step, o += dx) { o[0] = s[2]; o[1] = s[1]; o[2] = s[0]; }
             break;
         case FMT_XBGR8888: case FMT_ABGR8888:          // R G B X
-            for (int x = 0; x < W; x++, s += step) { o[0] = s[0]; o[1] = s[1]; o[2] = s[2]; o += 3; }
+            for (int x = 0; x < W; x++, s += step, o += dx) { o[0] = s[0]; o[1] = s[1]; o[2] = s[2]; }
             break;
         default: {                                     // RGB565, little-endian
-            for (int x = 0; x < W; x++, s += step) {
+            for (int x = 0; x < W; x++, s += step, o += dx) {
                 unsigned v = s[0] | (unsigned)s[1] << 8;
                 o[0] = (uint8_t)((v >> 11 & 31) * 255 / 31);
                 o[1] = (uint8_t)((v >> 5 & 63) * 255 / 63);
                 o[2] = (uint8_t)((v & 31) * 255 / 31);
-                o += 3;
             }
         }
         }
     }
+    last_ms = (int)((now_ns() - t0) / 1000000);
     pthread_mutex_unlock(&mtx);
-    *ow = W;
-    *oh = H;
+    *ow = OW;
+    *oh = t % 180 ? W : H;
     return 0;
+}
+
+int cap_last_ms(void)
+{
+    pthread_mutex_lock(&mtx);
+    int v = last_ms;
+    pthread_mutex_unlock(&mtx);
+    return v;
 }
 
 const char *cap_format(void)

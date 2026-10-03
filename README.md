@@ -6,8 +6,7 @@ start through `LD_PRELOAD`, running inside the MPC process. Nothing else is inst
 changed.
 
 **Status:** passes the offline tests (x86: unit, the HTTP server under ASan+UBSan and TSan, the preload gate, the
-installer under busybox) and builds for armhf (glibc symbols up to 2.17). **Not yet run on a device.** The touch
-mapping (rotation 90) is the one verified on an MPC Key 37 with the earlier stand-alone tool.
+installer under busybox) and builds for armhf (glibc symbols up to 2.17).
 
 ## What it does
 
@@ -21,7 +20,7 @@ mapping (rotation 90) is the one verified on an MPC Key 37 with the earlier stan
 | `GET /stream[?half=1&fps=N]` | frames as `multipart/x-mixed-replace` PNGs (an unchanged screen sends nothing) |
 | `GET /tap?x=&y=[&hold=ms]` | touch and release (hold 10 to 4000 ms, default 90) |
 | `GET /down?x=&y=`, `/move?x=&y=`, `/up` | a drag |
-| `GET /info` | JSON: screen size and pixel format, capture state, the touch device and rotation |
+| `GET /info` | JSON: screen size and pixel format, capture state, the touch device, rotations, the last frame's capture and encode times |
 
 Coordinates are screen pixels (`/info` gives the size).
 
@@ -30,14 +29,18 @@ Coordinates are screen pixels (`/info` gives the size).
 - **Screen:** DRM/KMS, not `/dev/mem`. A root process may get a handle to any framebuffer (`GETFB2`, needs
   `CAP_SYS_ADMIN`) on its own DRM file and map it read-only (`MAP_DUMB`). The add-in finds the lit CRTC on
   `/dev/dri/card*` and asks it for its framebuffer on every frame, so page flips are followed. Size and pixel format
-  (XRGB/XBGR 8888, RGB565) come from the device; tiled or compressed buffers are refused. The DRM ioctls are
+  (XRGB/XBGR 8888, RGB565) come from the device; tiled or compressed buffers are refused. The scanout is the
+  physical panel, which may be portrait with the UI drawn into it on its side (the MPC Key 37's is 800 x 1280):
+  `screen_rotate` turns it upright (auto: a portrait scanout turns 90 degrees, since MPC's UI is landscape). The DRM ioctls are
   written out in `src/drm_min.h`, so the build needs no kernel or libdrm headers.
 - **PNG:** zlib, loaded at run time (`libz.so.1`, already loaded by MPC); level 1. Before encoding, a CRC of the
   frame is compared with the last one sent, so a still screen costs a capture and a CRC, not an encode.
 - **Touch:** events written into the touchscreen's own evdev node, which MPC reads like a real finger (slot 0 of
-  multitouch protocol B, plus `BTN_TOUCH` and `ABS_X/Y`). The device is found automatically: the first direct
-  multitouch device that isn't virtual, so a mouse add-in's uinput touch device is skipped. Its axis ranges are
-  read from the device; how the panel is rotated against the screen is a setting (`touch_rotate`).
+  multitouch protocol B, plus `BTN_TOUCH` and `ABS_X/Y`). The device is found automatically: the first
+  multitouch device that isn't virtual, preferring one that says it is on the screen (not every driver does), so a
+  mouse add-in's touch device, which has no multitouch axes, is skipped. Its axis ranges are read from the device. Touches are mapped from the upright picture back into the scanout, which is the touch
+  panel's own frame, so normally no touch rotation is needed (`touch_rotate` is there for a panel mounted
+  otherwise).
 
 ### Living inside MPC
 
@@ -63,7 +66,8 @@ An add-in shares MPC's process, so it is written so that it can't hurt MPC:
 | `bind` | 0.0.0.0 | listen address. **There is no login:** anyone who can reach the port sees and touches the screen. Use `127.0.0.1` and an SSH tunnel on a network you don't trust |
 | `port` | 8080 | |
 | `touch_device` | auto | or `/dev/input/eventN` |
-| `touch_rotate` | 90 | 0, 90, 180 or 270; 90 is right for the MPC Key 37 |
+| `screen_rotate` | auto | the clockwise turn that shows the scanout upright: auto (portrait turns 90), 0, 90, 180, 270 |
+| `touch_rotate` | 0 | how the touch panel sits against the scanout: 0, 90, 180 or 270 |
 | `max_fps` | 10 | stream frame cap (1 to 60) |
 | `max_clients` | 6 | connections at once |
 | `nice` | 10 | the add-in threads' nice value (0 to 19) |

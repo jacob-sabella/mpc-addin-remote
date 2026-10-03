@@ -7,7 +7,8 @@ struct conf {
     char bind[46];            // listen address (0.0.0.0: every interface)
     int port;
     char touch_device[64];    // auto, or /dev/input/eventN
-    int touch_rotate;         // 0, 90, 180 or 270: how the touch panel sits against the screen
+    int screen_rotate;        // -1 auto, or 0, 90, 180, 270: the clockwise turn that makes the scanout upright
+    int touch_rotate;         // 0, 90, 180 or 270: how the touch panel sits against the scanout
     int max_fps;              // stream frame cap
     int max_clients;          // connections at once (streams count)
     int nice;                 // the add-in threads' nice value, 0..19

@@ -12,7 +12,8 @@ void conf_defaults(struct conf *c)
     snprintf(c->bind, sizeof c->bind, "0.0.0.0");
     c->port = 8080;
     snprintf(c->touch_device, sizeof c->touch_device, "auto");
-    c->touch_rotate = 90;     // the MPC Key 37's panel (verified); other models may need another value
+    c->screen_rotate = -1;    // auto: a portrait scanout (the MPC Key 37's 800 x 1280 panel) turns 90 degrees
+    c->touch_rotate = 0;      // the touch panel and the scanout are the same physical panel
     c->max_fps = 10;
     c->max_clients = 6;
     c->nice = 10;
@@ -35,10 +36,11 @@ int conf_line(struct conf *c, const char *line)
     if (sscanf(line, " %31[a-z_] = %95s", k, v) != 2) return -1;
     if (!strcmp(k, "enabled")) return to_int(v, 0, 1, &c->enabled);
     if (!strcmp(k, "port")) return to_int(v, 1, 65535, &c->port);
-    if (!strcmp(k, "touch_rotate")) {
+    if (!strcmp(k, "touch_rotate") || !strcmp(k, "screen_rotate")) {
         int r;
-        if (to_int(v, 0, 270, &r) || r % 90) return -1;
-        c->touch_rotate = r;
+        if (!strcmp(v, "auto") && k[0] == 's') r = -1;
+        else if (to_int(v, 0, 270, &r) || r % 90) return -1;
+        *(k[0] == 's' ? &c->screen_rotate : &c->touch_rotate) = r;
         return 0;
     }
     if (!strcmp(k, "max_fps")) return to_int(v, 1, 60, &c->max_fps);

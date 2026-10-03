@@ -4,7 +4,7 @@ file: the page, /info, PNG frames (decoded and compared pixel by pixel), the str
 and the connection limits.  Usage: test_remote.py <host_main binary>"""
 import json, os, socket, struct, subprocess, sys, tempfile, threading, time, urllib.request, zlib
 
-W, H = 64, 40
+W, H = 64, 40     # the scanout (main() also runs a portrait one: 40 x 64, shown turned 90 degrees)
 fails = 0
 
 
@@ -44,13 +44,17 @@ def png_decode(data):
     return w, h, b"".join(r[1:] for r in rows)
 
 
-def expected(fb, scale):
-    out = bytearray()
-    for y in range(0, H - H % scale, scale):
-        for x in range(0, W - W % scale, scale):
-            b, g, r, _ = fb[(y * W + x) * 4:(y * W + x) * 4 + 4]
-            out += bytes((r, g, b))
-    return bytes(out)
+def expected(fb, scale, turn):
+    """The upright RGB frame: the scanout sampled every `scale`, turned `turn` degrees clockwise."""
+    ws, hs = W // scale, H // scale
+    src = [[fb[((y * scale) * W + x * scale) * 4:((y * scale) * W + x * scale) * 4 + 3][::-1] for x in range(ws)] for y in range(hs)]
+    for _ in range(turn // 90):
+        src = [list(r) for r in zip(*src[::-1])]   # one clockwise quarter turn
+    return b"".join(b"".join(r) for r in src)
+
+
+def upright_to_scanout(x, y, turn):
+    return (y, H - 1 - x) if turn == 90 else (x, y)
 
 
 def get(url, timeout=5):
@@ -86,8 +90,10 @@ def events(path):
     return [struct.unpack("llHHi", data[i:i + size])[2:] for i in range(0, len(data) - size + 1, size)]
 
 
-def main():
-    exe = sys.argv[1]
+def run(exe, full):
+    turn = 90 if H > W else 0
+    UW, UH = (H, W) if turn else (W, H)
+    print(f"-- scanout {W} x {H}, shown {UW} x {UH}")
     tmp = tempfile.mkdtemp()
     fbpath, touchpath, confpath = (os.path.join(tmp, n) for n in ("fb.raw", "touch.ev", "remote.conf"))
     fb = bytearray()
@@ -112,87 +118,93 @@ def main():
         check(st == 200 and "text/html" in ct and b"/stream" in body, "page")
         st, ct, body = get(base + "/info")
         info = json.loads(body)
-        check(st == 200 and info["width"] == W and info["height"] == H and info["format"] == "XR24"
-              and info["capture"] == "ok" and info["png"] is True and info["touch_rotate"] == 90, f"/info {info}")
+        check(st == 200 and info["width"] == UW and info["height"] == UH and info["format"] == "XR24"
+              and info["capture"] == "ok" and info["png"] is True and info["screen_rotate"] == -1
+              and info["touch_rotate"] == 0, f"/info {info}")
 
         st, ct, body = get(base + "/screen.png")
         w, h, px = png_decode(body)
-        check(st == 200 and ct == "image/png" and (w, h) == (W, H) and px == expected(fb, 1), "full frame matches the framebuffer")
+        check(st == 200 and ct == "image/png" and (w, h) == (UW, UH) and px == expected(fb, 1, turn), "full frame matches the framebuffer")
         st, ct, body = get(base + "/screen.png?half=1")
         w, h, px = png_decode(body)
-        check((w, h) == (W // 2, H // 2) and px == expected(fb, 2), "half frame takes every other pixel")
+        check((w, h) == (UW // 2, UH // 2) and px == expected(fb, 2, turn), "half frame takes every other pixel")
+        info = json.loads(get(base + "/info")[2])
+        check(info["capture_ms"] >= 0 and info["encode_ms"] >= 0, "timings reported")
 
-        # stream: the first frame comes at once, an unchanged screen sends no more, a change sends one
-        s = socket.create_connection(("127.0.0.1", port), timeout=5)
-        s.sendall(b"GET /stream HTTP/1.1\r\nHost: x\r\n\r\n")
-        buf = b""
-        t0 = time.time()
-        while buf.count(b"--mpcframe") < 1 and time.time() - t0 < 5:
-            buf += s.recv(65536)
-        check(b"multipart/x-mixed-replace; boundary=mpcframe" in buf, "stream header")
-        time.sleep(0.6)
-        s.settimeout(0.3)
-        more = b""
-        try:
-            more = s.recv(65536)
-        except socket.timeout:
-            pass
-        rest = buf.split(b"--mpcframe", 1)[1]
-        n_frames = (rest + more).count(b"--mpcframe") + 1
-        check(n_frames == 1, f"an unchanged screen sends no new frames (got {n_frames})")
-        with open(fbpath, "r+b") as f:
-            f.write(b"\x00\x00\xff\xff")      # pixel (0,0) turns red
-        got = b""
-        s.settimeout(3)
-        t0 = time.time()
-        while b"--mpcframe" not in got and time.time() - t0 < 3:
-            got += s.recv(65536)
-        check(b"--mpcframe" in got, "a changed screen sends a frame")
-        s.close()
-
-        # touch: a tap on the Key 37's rotation gives the verified panel coordinates, then a lift
+        # touch: a tap lands on the scanout point under the upright one, then lifts
         before = len(events(touchpath)) if os.path.exists(touchpath) else 0
         st, _, body = get(base + "/tap?x=16&y=30&hold=20")
         ev = events(touchpath)[before:]
         EV_SYN, EV_KEY, EV_ABS = 0, 1, 3
+        sx, sy = upright_to_scanout(16, 30, turn)
         pos = {c: v for t, c, v in ev if t == EV_ABS and c in (0x35, 0x36)}
-        check(st == 200 and pos == {0x35: 30 * 2048 // H, 0x36: (W - 16) * 2048 // W}, f"tap position {pos}")
+        check(st == 200 and pos == {0x35: sx * 2048 // W, 0x36: sy * 2048 // H}, f"tap position {pos}")
         check((EV_KEY, 0x14a, 1) in ev and (EV_KEY, 0x14a, 0) in ev and (EV_ABS, 0x39, -1) in ev
               and ev[-1] == (EV_SYN, 0, 0), "tap presses, lifts and syncs")
-        before = len(events(touchpath))
-        get(base + "/move?x=1&y=1")
-        check(len(events(touchpath)) == before, "a move with no finger down does nothing")
-        get(base + "/down?x=10&y=10"); get(base + "/move?x=20&y=10"); get(base + "/up")
-        ev = events(touchpath)[before:]
-        check(ev.count((EV_KEY, 0x14a, 1)) == 1 and ev.count((EV_KEY, 0x14a, 0)) == 1
-              and sum(1 for e in ev if e[:2] == (EV_ABS, 0x36)) == 2, "down, move, up")
-        check(get(base + "/tap?x=5")[0] == 400, "a tap without y is refused")
-        check(get(base + "/tap?max=5&y=5")[0] == 400, "x is not found inside another key")
+        if full:
 
-        # bad and hostile requests
-        check(get(base + "/nope")[0] == 404, "404")
-        check(raw(port, b"POST / HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 405"), "POST refused")
-        check(raw(port, b"\r\n\r\n").startswith(b"HTTP/1.1 400"), "empty request")
-        check(raw(port, b"GET /" + b"a" * 5000 + b" HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 400"), "oversized request line")
-        check(raw(port, b"GET / HTTP/1.1\r\n", timeout=8).startswith(b"HTTP/1.1 200"), "a request without the blank line still gets an answer after the timeout")
-        check(raw(port, b"GET /screen.png?half=7&x=\xff HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 200"), "odd query values")
+            # stream: the first frame comes at once, an unchanged screen sends no more, a change sends one
+            s = socket.create_connection(("127.0.0.1", port), timeout=5)
+            s.sendall(b"GET /stream HTTP/1.1\r\nHost: x\r\n\r\n")
+            buf = b""
+            t0 = time.time()
+            while buf.count(b"--mpcframe") < 1 and time.time() - t0 < 5:
+                buf += s.recv(65536)
+            check(b"multipart/x-mixed-replace; boundary=mpcframe" in buf, "stream header")
+            time.sleep(0.6)
+            s.settimeout(0.3)
+            more = b""
+            try:
+                more = s.recv(65536)
+            except socket.timeout:
+                pass
+            rest = buf.split(b"--mpcframe", 1)[1]
+            n_frames = (rest + more).count(b"--mpcframe") + 1
+            check(n_frames == 1, f"an unchanged screen sends no new frames (got {n_frames})")
+            with open(fbpath, "r+b") as f:
+                f.write(b"\x00\x00\xff\xff")      # pixel (0,0) turns red
+            got = b""
+            s.settimeout(3)
+            t0 = time.time()
+            while b"--mpcframe" not in got and time.time() - t0 < 3:
+                got += s.recv(65536)
+            check(b"--mpcframe" in got, "a changed screen sends a frame")
+            s.close()
 
-        # limits: two streams at most; max_clients=4 connections at once
-        holders = []
-        for _ in range(2):
-            c = socket.create_connection(("127.0.0.1", port), timeout=5)
-            c.sendall(b"GET /stream HTTP/1.1\r\n\r\n")
-            c.recv(100)
-            holders.append(c)
-        check(get(base + "/stream")[0] == 503, "a third stream is refused")
-        idle = [socket.create_connection(("127.0.0.1", port), timeout=8) for _ in range(2)]
-        time.sleep(0.2)
-        resp = raw(port, b"GET / HTTP/1.1\r\n\r\n")
-        check(resp.startswith(b"HTTP/1.1 503"), "connections over max_clients are refused")
-        for c in holders + idle:
-            c.close()
-        time.sleep(6)                          # the idle ones time out, the streams notice their client left
-        check(get(base + "/")[0] == 200, "slots come back after clients leave")
+            before = len(events(touchpath))
+            get(base + "/move?x=1&y=1")
+            check(len(events(touchpath)) == before, "a move with no finger down does nothing")
+            get(base + "/down?x=10&y=10"); get(base + "/move?x=20&y=10"); get(base + "/up")
+            ev = events(touchpath)[before:]
+            check(ev.count((EV_KEY, 0x14a, 1)) == 1 and ev.count((EV_KEY, 0x14a, 0)) == 1
+                  and sum(1 for e in ev if e[:2] == (EV_ABS, 0x36)) == 2, "down, move, up")
+            check(get(base + "/tap?x=5")[0] == 400, "a tap without y is refused")
+            check(get(base + "/tap?max=5&y=5")[0] == 400, "x is not found inside another key")
+
+            # bad and hostile requests
+            check(get(base + "/nope")[0] == 404, "404")
+            check(raw(port, b"POST / HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 405"), "POST refused")
+            check(raw(port, b"\r\n\r\n").startswith(b"HTTP/1.1 400"), "empty request")
+            check(raw(port, b"GET /" + b"a" * 5000 + b" HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 400"), "oversized request line")
+            check(raw(port, b"GET / HTTP/1.1\r\n", timeout=8).startswith(b"HTTP/1.1 200"), "a request without the blank line still gets an answer after the timeout")
+            check(raw(port, b"GET /screen.png?half=7&x=\xff HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 200"), "odd query values")
+
+            # limits: two streams at most; max_clients=4 connections at once
+            holders = []
+            for _ in range(2):
+                c = socket.create_connection(("127.0.0.1", port), timeout=5)
+                c.sendall(b"GET /stream HTTP/1.1\r\n\r\n")
+                c.recv(100)
+                holders.append(c)
+            check(get(base + "/stream")[0] == 503, "a third stream is refused")
+            idle = [socket.create_connection(("127.0.0.1", port), timeout=8) for _ in range(2)]
+            time.sleep(0.2)
+            resp = raw(port, b"GET / HTTP/1.1\r\n\r\n")
+            check(resp.startswith(b"HTTP/1.1 503"), "connections over max_clients are refused")
+            for c in holders + idle:
+                c.close()
+            time.sleep(6)                          # the idle ones time out, the streams notice their client left
+            check(get(base + "/")[0] == 200, "slots come back after clients leave")
     finally:
         proc.terminate()
         try:
@@ -205,6 +217,13 @@ def main():
     check(not bad, "no sanitizer reports" + ("".join("\n     " + l for l in bad[:5])))
     if fails:
         print(err[-4000:])
+
+
+def main():
+    global W, H
+    run(sys.argv[1], True)
+    W, H = 40, 64
+    run(sys.argv[1], False)
     print(f"http: {'all passed' if not fails else f'{fails} FAILED'}")
     return 1 if fails else 0
 

@@ -20,17 +20,18 @@ static char devname[64] = "none";
 
 #define BIT(arr, b) ((arr)[(b) / (8 * sizeof(long))] >> ((b) % (8 * sizeof(long))) & 1)
 
-// A direct (on-screen) multitouch device that isn't a virtual one (a mouse add-on's uinput touch, say).
-static int is_touchscreen(int f)
+// How well a device looks like the touchscreen: 0 not at all (no multitouch axes, or virtual), 1 a multitouch
+// device, 2 one that also says it is on the screen (INPUT_PROP_DIRECT; not every driver sets it: the MPC Key 37's
+// ILI2117 doesn't). A mouse add-in's touch device has no multitouch axes.
+static int touch_score(int f)
 {
     unsigned long abs[(ABS_MAX + 1) / (8 * sizeof(long)) + 1] = { 0 };
     unsigned long prop[(INPUT_PROP_MAX + 1) / (8 * sizeof(long)) + 1] = { 0 };
     struct input_id id;
     if (ioctl(f, EVIOCGBIT(EV_ABS, sizeof abs), abs) < 0) return 0;
     if (!BIT(abs, ABS_MT_POSITION_X) || !BIT(abs, ABS_MT_POSITION_Y)) return 0;
-    if (ioctl(f, EVIOCGPROP(sizeof prop), prop) >= 0 && !BIT(prop, INPUT_PROP_DIRECT)) return 0;
     if (ioctl(f, EVIOCGID, &id) == 0 && id.bustype == BUS_VIRTUAL) return 0;
-    return 1;
+    return ioctl(f, EVIOCGPROP(sizeof prop), prop) >= 0 && BIT(prop, INPUT_PROP_DIRECT) ? 2 : 1;
 }
 
 static void ranges(int f)
@@ -55,17 +56,25 @@ int touch_open(const char *dev, int rotate)
     }
 #endif
     char p[64];
-    for (int i = 0; i < 32 && r; i++) {
-        if (dev && strcmp(dev, "auto")) { if (i) break; snprintf(p, sizeof p, "%s", dev); }
-        else snprintf(p, sizeof p, "/dev/input/event%d", i);
+    int best = 0;
+    if (dev && strcmp(dev, "auto")) {
+        snprintf(p, sizeof p, "%s", dev);
         int f = open(p, O_WRONLY | O_CLOEXEC);   // write-only: a reader would be sent every touch it never reads
-        if (f < 0) continue;
-        if (!(dev && strcmp(dev, "auto")) && !is_touchscreen(f)) { close(f); continue; }
-        ranges(f);
-        fd = f;
-        snprintf(devname, sizeof devname, "%s", p);
-        r = 0;
+        if (f >= 0) { fd = f; best = 1; snprintf(devname, sizeof devname, "%s", p); }
+    } else {
+        for (int i = 0; i < 32 && best < 2; i++) {   // the first on-screen one, else the first multitouch one
+            snprintf(p, sizeof p, "/dev/input/event%d", i);
+            int f = open(p, O_WRONLY | O_CLOEXEC);
+            if (f < 0) continue;
+            int s = touch_score(f);
+            if (s <= best) { close(f); continue; }
+            if (fd >= 0) close(fd);
+            fd = f;
+            best = s;
+            snprintf(devname, sizeof devname, "%s", p);
+        }
     }
+    if (best) { ranges(fd); r = 0; }
     pthread_mutex_unlock(&mtx);
     return r;
 }

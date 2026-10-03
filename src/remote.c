@@ -91,17 +91,13 @@ static void reply_text(int fd, const char *status, const char *text)
     reply(fd, status, "text/plain; charset=utf-8", text, strlen(text));
 }
 
-// The screen size for touch mapping; the last known one if the display can't be read right now.
-static void screen_size(int *w, int *h)
+static atomic_int encode_ms;   // the last PNG encode's time
+
+static long long now_ms(void)
 {
-    static int lw = 1280, lh = 800;
-    static pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
-    int cw, ch;
-    pthread_mutex_lock(&m);
-    if (cap_size(&cw, &ch) == 0) { lw = cw; lh = ch; }
-    *w = lw;
-    *h = lh;
-    pthread_mutex_unlock(&m);
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
 }
 
 static void serve_info(int fd)
@@ -110,9 +106,10 @@ static void serve_info(int fd)
     char b[512];
     int n = snprintf(b, sizeof b,
                      "{\"version\":\"%s\",\"width\":%d,\"height\":%d,\"format\":\"%s\",\"capture\":\"%s\","
-                     "\"touch\":\"%s\",\"touch_rotate\":%d,\"png\":%s}",
-                     VERSION, w, h, cap_format(), r ? cap_error(r) : "ok", touch_device(), C.touch_rotate,
-                     png_init() ? "false" : "true");
+                     "\"touch\":\"%s\",\"screen_rotate\":%d,\"touch_rotate\":%d,\"png\":%s,"
+                     "\"capture_ms\":%d,\"encode_ms\":%d}",
+                     VERSION, w, h, cap_format(), r ? cap_error(r) : "ok", touch_device(), C.screen_rotate,
+                     C.touch_rotate, png_init() ? "false" : "true", cap_last_ms(), atomic_load(&encode_ms));
     reply(fd, "200 OK", "application/json", b, (size_t)n);
 }
 
@@ -134,7 +131,9 @@ static int grab_png(int scale, uint8_t **png, size_t *len, uint32_t *last_crc)
         if (c == *last_crc) { free(rgb); return 2; }
         *last_crc = c;
     }
+    long long t0 = now_ms();
     *png = png_encode(rgb, ow, oh, len);
+    atomic_store(&encode_ms, (int)(now_ms() - t0));
     free(rgb);
     return *png ? 0 : 1;
 }
@@ -147,13 +146,6 @@ static void serve_screen(int fd, int scale)
     if (r == 0) reply(fd, "200 OK", "image/png", png, len);
     else reply_text(fd, "503 Service Unavailable", r < 0 ? cap_error(r) : "PNG encoding failed (no libz.so.1?)");
     free(png);
-}
-
-static long long now_ms(void)
-{
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
 }
 
 // The client is gone (a read would return end of file, or the socket failed).
@@ -233,7 +225,7 @@ static void handle(int fd)
     char *q = strchr(target, '?');
     if (q) *q++ = 0;
     const char *path = target;
-    int w, h;
+    int sx, sy, sw, sh;
 
     if (!strcmp(path, "/") || !strcmp(path, "/index.html")) {
         reply(fd, "200 OK", "text/html; charset=utf-8", PAGE, sizeof PAGE - 1);
@@ -246,11 +238,12 @@ static void handle(int fd)
     } else if (!strcmp(path, "/tap") || !strcmp(path, "/down") || !strcmp(path, "/move")) {
         int x = query_int(q, "x", -1, -1, 65535), y = query_int(q, "y", -1, -1, 65535);
         if (x < 0 || y < 0) { reply_text(fd, "400 Bad Request", "x and y are needed"); return; }
-        screen_size(&w, &h);
-        if (!strcmp(path, "/down")) touch_down(x, y, w, h);
-        else if (!strcmp(path, "/move")) touch_move(x, y, w, h);
+        int r = cap_to_scanout(x, y, &sx, &sy, &sw, &sh);   // the touch panel is in the scanout's frame
+        if (r) { reply_text(fd, "503 Service Unavailable", cap_error(r)); return; }
+        if (!strcmp(path, "/down")) touch_down(sx, sy, sw, sh);
+        else if (!strcmp(path, "/move")) touch_move(sx, sy, sw, sh);
         else {
-            touch_down(x, y, w, h);
+            touch_down(sx, sy, sw, sh);
             usleep((useconds_t)query_int(q, "hold", 90, 10, 4000) * 1000);
             touch_up();
         }
@@ -361,6 +354,7 @@ __attribute__((visibility("default"))) int mpc_remote_addin_start(void)
     int bad = conf_load(&C, path);
     if (bad) LOG("%d line(s) of %s not understood, ignored\n", bad, path);
     if (!C.enabled) { LOG("disabled in %s\n", path); return -1; }
+    cap_set_rotation(C.screen_rotate);
     sigset_t all, old;
     sigfillset(&all);
     pthread_sigmask(SIG_BLOCK, &all, &old);   // the new thread (and every thread it creates) blocks all signals
