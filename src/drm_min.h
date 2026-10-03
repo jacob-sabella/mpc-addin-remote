@@ -42,6 +42,7 @@ struct drm_gem_close { uint32_t handle, pad; };
 
 #define DRM_IOCTL_BASE 'd'
 #define DRM_IOCTL_GEM_CLOSE         _IOW(DRM_IOCTL_BASE, 0x09, struct drm_gem_close)
+#define DRM_IOCTL_DROP_MASTER       _IO(DRM_IOCTL_BASE, 0x1f)
 #define DRM_IOCTL_MODE_GETRESOURCES _IOWR(DRM_IOCTL_BASE, 0xA0, struct drm_mode_card_res)
 #define DRM_IOCTL_MODE_GETCRTC      _IOWR(DRM_IOCTL_BASE, 0xA1, struct drm_mode_crtc)
 #define DRM_IOCTL_MODE_GETFB        _IOWR(DRM_IOCTL_BASE, 0xAD, struct drm_mode_fb_cmd)

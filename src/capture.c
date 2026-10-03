@@ -89,6 +89,10 @@ static int open_display(void)
         snprintf(p, sizeof p, "/dev/dri/card%d", i);
         int fd = open(p, O_RDWR | O_CLOEXEC);
         if (fd < 0) continue;
+        // Opening a card nobody is master of (MPC stopped or still starting) makes this file its DRM master, and MPC
+        // then aborts at start ("Failed to initialise display"). Give it back at once: capture needs no master (GETFB
+        // hands root the buffer handles). It fails harmlessly when this file did not become master.
+        ioctl(fd, DRM_IOCTL_DROP_MASTER, 0);
         struct drm_mode_card_res r = { 0 };
         uint32_t ids[32];
         if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &r) == 0 && r.count_crtcs) {
