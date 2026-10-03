@@ -199,7 +199,7 @@ def protocol(srv, port):
     st, _, _ = http(port, "POST", "/mcp", big)
     check(st == 200, "a 60 KB body arrives whole")
     st, _, body = http(port, "GET", "/info", None)
-    check(st == 200 and json.loads(body)["version"] == "0.2.0", "the HTTP API still answers")
+    check(st == 200 and json.loads(body)["version"] == "0.2.2", "the HTTP API still answers")
 
 
 def expected(fb, x0, y0, w, h, z2):
