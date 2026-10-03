@@ -1,4 +1,4 @@
-// PNG: one IDAT of filter-type-0 rows, compressed at level 1 (a screen of flat colours compresses well and fast).
+// PNG: one IDAT of filter-type-0 rows (a screen of flat colours compresses well), level 1 for the stream.
 #define _GNU_SOURCE
 #include "png.h"
 #include <dlfcn.h>
@@ -53,7 +53,7 @@ static size_t chunk(uint8_t *p, const char *type, size_t n)
     return 12 + n;
 }
 
-uint8_t *png_encode(const uint8_t *rgb, int w, int h, size_t *len)
+uint8_t *png_encode_level(const uint8_t *rgb, int w, int h, size_t *len, int level)
 {
     if (png_init() || w <= 0 || h <= 0) return NULL;
     size_t rawlen = (size_t)h * (1 + (size_t)w * 3);
@@ -75,10 +75,15 @@ uint8_t *png_encode(const uint8_t *rgb, int w, int h, size_t *len)
     be32(ih + 4, (uint32_t)h);
     ih[8] = 8; ih[9] = 2; ih[10] = 0; ih[11] = 0; ih[12] = 0;
     o += chunk(png + o, "IHDR", 13);
-    if (z_compress2(png + o + 8, &clen, raw, rawlen, 1) != 0) { free(raw); free(png); return NULL; }
+    if (z_compress2(png + o + 8, &clen, raw, rawlen, level) != 0) { free(raw); free(png); return NULL; }
     free(raw);
     o += chunk(png + o, "IDAT", clen);
     o += chunk(png + o, "IEND", 0);
     *len = o;
     return png;
+}
+
+uint8_t *png_encode(const uint8_t *rgb, int w, int h, size_t *len)
+{
+    return png_encode_level(rgb, w, h, len, 1);
 }
