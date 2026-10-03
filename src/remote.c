@@ -165,7 +165,8 @@ static int peer_closed(int fd)
     return n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR);
 }
 
-// multipart/x-mixed-replace PNG frames until the client leaves; an unchanged screen sends nothing.
+// multipart/x-mixed-replace PNG frames until the client leaves; an unchanged screen sends nothing more once its frame
+// has gone out twice.
 static void serve_stream(int fd, int scale, int fps)
 {
     if (atomic_fetch_add(&streams, 1) >= MAX_STREAMS) {
@@ -179,9 +180,12 @@ static void serve_stream(int fd, int scale, int fps)
         return;
     }
     static const char hdr[] = "HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=mpcframe\r\n"
-                              "Cache-Control: no-store\r\nConnection: close\r\n\r\n";
+                              "Cache-Control: no-store\r\nConnection: close\r\n\r\n--mpcframe\r\n";
     uint32_t crc = 0;
     long long frame_ms = 1000 / fps;
+    uint8_t *last = NULL;      // the newest frame, kept to send once more
+    size_t last_len = 0;
+    int again = 0;             // `last` has gone out once only
     if (send_all(fd, hdr, sizeof hdr - 1) == 0) {
         for (;;) {
             long long t0 = now_ms();
@@ -189,11 +193,17 @@ static void serve_stream(int fd, int scale, int fps)
             size_t len = 0;
             int r = grab_png(scale, &png, &len, &crc);
             if (r == 0) {
+                free(last);
+                last = png, last_len = len, again = 1;
+            }
+            if (r == 0 || (r == 2 && again)) {
+                // A browser shows a part only once the next part arrives, so the newest frame goes out a second time
+                // when the screen stops changing: otherwise the page shows the screen one change late (blank at first).
+                if (r == 2) again = 0;
                 char part[96];
-                int k = snprintf(part, sizeof part, "--mpcframe\r\nContent-Type: image/png\r\nContent-Length: %zu\r\n\r\n", len);
-                int bad = send_all(fd, part, (size_t)k) || send_all(fd, png, len) || send_all(fd, "\r\n", 2);
-                free(png);
-                if (bad) break;
+                int k = snprintf(part, sizeof part, "Content-Type: image/png\r\nContent-Length: %zu\r\n\r\n", last_len);
+                static const char end[] = "\r\n--mpcframe\r\n";
+                if (send_all(fd, part, (size_t)k) || send_all(fd, last, last_len) || send_all(fd, end, sizeof end - 1)) break;
             } else if (peer_closed(fd)) {
                 break;
             }
@@ -201,6 +211,7 @@ static void serve_stream(int fd, int scale, int fps)
             if (wait > 0) usleep((useconds_t)wait * 1000);
         }
     }
+    free(last);
     atomic_fetch_sub(&streams, 1);
 }
 

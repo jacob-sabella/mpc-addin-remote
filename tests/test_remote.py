@@ -2,7 +2,7 @@
 """Drive the addin's HTTP server (tests/host_main built with sanitizers) against a fake framebuffer and touch
 file: the page, /info, PNG frames (decoded and compared pixel by pixel), the stream, touch events, bad requests
 and the connection limits.  Usage: test_remote.py <host_main binary>"""
-import json, os, socket, struct, subprocess, sys, tempfile, threading, time, urllib.request, zlib
+import json, os, re, socket, struct, subprocess, sys, tempfile, threading, time, urllib.request, zlib
 
 W, H = 64, 40     # the scanout (main() also runs a portrait one: 40 x 64, shown turned 90 degrees)
 fails = 0
@@ -143,14 +143,18 @@ def run(exe, full):
               and ev[-1] == (EV_SYN, 0, 0), "tap presses, lifts and syncs")
         if full:
 
-            # stream: the first frame comes at once, an unchanged screen sends no more, a change sends one
+            # stream: the first frame comes at once, then once more when the screen has not changed (a browser shows a
+            # part only once the next part arrives), and an unchanged screen sends nothing after that
             s = socket.create_connection(("127.0.0.1", port), timeout=5)
             s.sendall(b"GET /stream HTTP/1.1\r\nHost: x\r\n\r\n")
             buf = b""
             t0 = time.time()
-            while buf.count(b"--mpcframe") < 1 and time.time() - t0 < 5:
+            while buf.count(b"--mpcframe\r\n") < 3 and time.time() - t0 < 5:
                 buf += s.recv(65536)
             check(b"multipart/x-mixed-replace; boundary=mpcframe" in buf, "stream header")
+            parts = buf.split(b"\r\n\r\n", 1)[1].split(b"--mpcframe\r\n")[1:3]
+            check(len(parts) == 2 and parts[0] == parts[1] and parts[0].endswith(b"IEND\xaeB`\x82\r\n"),
+                  "the first frame comes twice, each part ended by a boundary")
             time.sleep(0.6)
             s.settimeout(0.3)
             more = b""
@@ -158,9 +162,8 @@ def run(exe, full):
                 more = s.recv(65536)
             except socket.timeout:
                 pass
-            rest = buf.split(b"--mpcframe", 1)[1]
-            n_frames = (rest + more).count(b"--mpcframe") + 1
-            check(n_frames == 1, f"an unchanged screen sends no new frames (got {n_frames})")
+            n_frames = (buf + more).count(b"image/png")
+            check(n_frames == 2, f"an unchanged screen sends no new frames (got {n_frames})")
             with open(fbpath, "r+b") as f:
                 f.write(b"\x00\x00\xff\xff")      # pixel (0,0) turns red
             got = b""
