@@ -8,7 +8,8 @@ docker run --rm --platform linux/arm/v7 -u "$(id -u):$(id -g)" -v "$PWD":/b -w /
   set -e
   F="-std=gnu11 -O2 -Wall -Wextra -Werror -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard"
   gcc $F -fPIC -shared -fvisibility=hidden -Wl,-z,defs -Wl,--as-needed -o build/mpc_remote_addin.so \
-    src/remote.c src/capture.c src/png.c src/touch.c src/conf.c -ldl -lpthread
+    src/remote.c src/capture.c src/png.c src/touch.c src/conf.c src/json.c src/image.c src/mcp.c src/midi.c \
+    src/device.c -ldl -lpthread
   strip --strip-unneeded build/mpc_remote_addin.so
   gcc $F -o build/standalone tools/standalone.c -ldl
   strip build/standalone

@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
-# Offline tests on the build machine (x86): unit tests and the HTTP server under ASan+UBSan and under TSan, and a
+# Offline tests on the build machine (x86): unit tests, and the HTTP server and its MCP endpoint (also through the
+# official MCP client when $MCP_PYTHON has it) under ASan+UBSan and under TSan, and a
 # preload smoke test of the real .so (it starts in a process named MPC and stays out of every other one), and the
 # installer against scratch systemd layouts (BUSYBOX=/path/to/busybox runs it in the device's shell).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 B=build/host
 mkdir -p "$B"
-SRC="src/remote.c src/capture.c src/png.c src/touch.c src/conf.c"
+SRC="src/remote.c src/capture.c src/png.c src/touch.c src/conf.c src/json.c src/image.c src/mcp.c src/midi.c src/device.c"
 W="-std=gnu11 -O1 -g -Wall -Wextra -Werror -DREMOTE_TEST -fno-omit-frame-pointer"
 
-cc $W -fsanitize=address,undefined -fno-sanitize-recover=all -o "$B/unit" tests/unit_test.c src/conf.c src/png.c src/touch.c -ldl -lpthread
+python3 tools/gen_mcp_tools.py --check
+cc $W -fsanitize=address,undefined -fno-sanitize-recover=all -o "$B/unit" tests/unit_test.c src/conf.c src/png.c src/touch.c \
+  src/json.c src/image.c -ldl -lpthread
 "$B/unit"
 
 cc $W -fsanitize=address,undefined -fno-sanitize-recover=all -o "$B/host_asan" tests/host_main.c $SRC -ldl -lpthread
 python3 tests/test_remote.py "$B/host_asan"
+python3 tests/test_mcp.py "$B/host_asan"
+"${MCP_PYTHON:-python3}" tests/test_mcp_sdk.py "$B/host_asan"     # MCP_PYTHON: a Python with the "mcp" package
 cc $W -fsanitize=thread -o "$B/host_tsan" tests/host_main.c $SRC -ldl -lpthread
 TSAN_OPTIONS="halt_on_error=0" python3 tests/test_remote.py "$B/host_tsan"
+TSAN_OPTIONS="halt_on_error=0" python3 tests/test_mcp.py "$B/host_tsan"
 
 # the real (non-test) .so, preloaded
 cc -std=gnu11 -O2 -Wall -Wextra -Werror -fPIC -shared -fvisibility=hidden -o "$B/mpc_remote_addin.so" $SRC -ldl -lpthread

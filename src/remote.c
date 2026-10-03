@@ -1,14 +1,19 @@
-// mpc-remote-addin: the MPC's screen and touchscreen over HTTP, from inside the MPC process (LD_PRELOAD).
+// mpc-remote-addin: the MPC's screen and touchscreen over HTTP, and an MCP endpoint (/mcp, src/mcp.c) for models,
+// from inside the MPC process (LD_PRELOAD).
 // It starts only in the process whose executable is named MPC. The launch script and anything else that inherits
 // LD_PRELOAD load it and do nothing. Everything runs on the addin's own threads, at normal scheduling and a low
 // priority, with every signal blocked so MPC's signals still go to MPC's threads.
 #define _GNU_SOURCE
 #include "capture.h"
 #include "conf.h"
+#include "device.h"
+#include "mcp.h"
 #include "page.h"
 #include "png.h"
 #include "touch.h"
+#include "version.h"
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <errno.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -24,7 +29,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.1.0"
 #define MAX_STREAMS 2
 
 static struct conf C;
@@ -77,13 +81,18 @@ static int send_all(int fd, const void *buf, size_t n)
     return 0;
 }
 
-static void reply(int fd, const char *status, const char *type, const void *body, size_t n)
+static void reply_h(int fd, const char *status, const char *type, const char *extra, const void *body, size_t n)
 {
-    char h[256];
+    char h[320];
     int k = snprintf(h, sizeof h,
                      "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nCache-Control: no-store\r\n"
-                     "Connection: close\r\n\r\n", status, type, n);
+                     "%sConnection: close\r\n\r\n", status, type, n, extra);
     if (send_all(fd, h, (size_t)k) == 0 && n) send_all(fd, body, n);
+}
+
+static void reply(int fd, const char *status, const char *type, const void *body, size_t n)
+{
+    reply_h(fd, status, type, "", body, n);
 }
 
 static void reply_text(int fd, const char *status, const char *text)
@@ -108,7 +117,7 @@ static void serve_info(int fd)
                      "{\"version\":\"%s\",\"width\":%d,\"height\":%d,\"format\":\"%s\",\"capture\":\"%s\","
                      "\"touch\":\"%s\",\"screen_rotate\":%d,\"touch_rotate\":%d,\"png\":%s,"
                      "\"capture_ms\":%d,\"encode_ms\":%d}",
-                     VERSION, w, h, cap_format(), r ? cap_error(r) : "ok", touch_device(), C.screen_rotate,
+                     REMOTE_VERSION, w, h, cap_format(), r ? cap_error(r) : "ok", touch_device(), C.screen_rotate,
                      C.touch_rotate, png_init() ? "false" : "true", cap_last_ms(), atomic_load(&encode_ms));
     reply(fd, "200 OK", "application/json", b, (size_t)n);
 }
@@ -195,27 +204,126 @@ static void serve_stream(int fd, int scale, int fps)
     atomic_fetch_sub(&streams, 1);
 }
 
-// Read the request head (up to the blank line), at most n-1 bytes, with the socket's receive timeout.
-static int read_head(int fd, char *buf, size_t n)
+// Read the request head (up to the blank line), at most n-1 bytes, with the socket's receive timeout. *got is every
+// byte read, which may run on into the body.
+static int read_head(int fd, char *buf, size_t n, size_t *got)
 {
-    size_t got = 0;
-    while (got < n - 1) {
-        ssize_t r = recv(fd, buf + got, n - 1 - got, 0);
+    *got = 0;
+    while (*got < n - 1) {
+        ssize_t r = recv(fd, buf + *got, n - 1 - *got, 0);
+        if (r < 0 && errno == EINTR) continue;
+        if (r <= 0) break;
+        *got += (size_t)r;
+        buf[*got] = 0;
+        if (strstr(buf, "\r\n\r\n") || strstr(buf, "\n\n")) return 0;
+    }
+    buf[*got] = 0;
+    return *got && strchr(buf, '\n') ? 0 : -1;
+}
+
+// A request header's value (name case-insensitive), trimmed, into out; 0 if found.
+static int header(const char *req, const char *name, char *out, size_t n)
+{
+    size_t nl = strlen(name);
+    const char *p = strchr(req, '\n');
+    while (p && p[1] && p[1] != '\r' && p[1] != '\n') {
+        p++;
+        const char *eol = strchr(p, '\n');
+        if (!eol) eol = p + strlen(p);
+        if ((size_t)(eol - p) > nl && !strncasecmp(p, name, nl) && p[nl] == ':') {
+            const char *v = p + nl + 1, *e = eol;
+            while (v < e && (*v == ' ' || *v == '\t')) v++;
+            while (e > v && isspace((unsigned char)e[-1])) e--;
+            size_t l = (size_t)(e - v) < n - 1 ? (size_t)(e - v) : n - 1;
+            memcpy(out, v, l);
+            out[l] = 0;
+            return 0;
+        }
+        p = *eol ? eol : NULL;
+    }
+    return -1;
+}
+
+#define MAX_BODY 65536
+
+// A Host header naming the device the way a person does: an IP address, localhost, or a .local (mDNS) name. A DNS
+// rebinding attack reaches the device under the attacker's own name, which is none of these.
+static int host_is_direct(const char *host)
+{
+    char h[256];
+    snprintf(h, sizeof h, "%s", host);
+    char *p = h;
+    if (*p == '[') {                                   // [v6]:port
+        char *e = strchr(p, ']');
+        if (!e) return 0;
+        *e = 0;
+        p++;
+    } else {
+        char *c = strrchr(p, ':');
+        if (c) *c = 0;
+    }
+    struct in6_addr a6;
+    struct in_addr a4;
+    size_t l = strlen(p);
+    return inet_pton(AF_INET, p, &a4) == 1 || inet_pton(AF_INET6, p, &a6) == 1 || !strcasecmp(p, "localhost")
+           || (l > 6 && !strcasecmp(p + l - 6, ".local"));
+}
+
+// POST /mcp: the body (Content-Length bytes; part may have come with the head) to mcp_handle(), and its reply.
+static void serve_mcp(int fd, const char *req, const char *rest, size_t have)
+{
+    char v[256], host[256];
+    if (header(req, "Origin", v, sizeof v) == 0 && strcmp(v, "null")) {
+        // a web page's request: only a page served from this same address may make one (no cross-site requests),
+        // and only under a direct address (no DNS rebinding). Programs send no Origin.
+        const char *o = strstr(v, "://");
+        if (header(req, "Host", host, sizeof host) || !o || strcasecmp(o + 3, host) || !host_is_direct(host)) {
+            reply_text(fd, "403 Forbidden", "cross-origin requests are refused");
+            return;
+        }
+    }
+    if (header(req, "Transfer-Encoding", v, sizeof v) == 0) { reply_text(fd, "411 Length Required", "send a Content-Length"); return; }
+    if (header(req, "Content-Length", v, sizeof v)) { reply_text(fd, "411 Length Required", "Content-Length is needed"); return; }
+    char *end;
+    long len = strtol(v, &end, 10);
+    if (*end || len < 0) { reply_text(fd, "400 Bad Request", "bad Content-Length"); return; }
+    if (len > MAX_BODY) { reply_text(fd, "413 Payload Too Large", "at most 64 KB"); return; }
+    char *body = malloc((size_t)len + 1);
+    if (!body) { reply_text(fd, "503 Service Unavailable", "out of memory"); return; }
+    size_t got = have < (size_t)len ? have : (size_t)len;
+    memcpy(body, rest, got);
+    while (got < (size_t)len) {
+        ssize_t r = recv(fd, body + got, (size_t)len - got, 0);
         if (r < 0 && errno == EINTR) continue;
         if (r <= 0) break;
         got += (size_t)r;
-        buf[got] = 0;
-        if (strstr(buf, "\r\n\r\n") || strstr(buf, "\n\n")) return 0;
     }
-    buf[got] = 0;
-    return got && strchr(buf, '\n') ? 0 : -1;
+    if (got < (size_t)len) { free(body); reply_text(fd, "400 Bad Request", "the body ended early"); return; }
+    body[len] = 0;
+    char *out;
+    size_t outlen;
+    int st = mcp_handle(body, (size_t)len, &out, &outlen);
+    free(body);
+    if (st == 202) reply(fd, "202 Accepted", "text/plain", "", 0);
+    else if (!out) reply_text(fd, "500 Internal Server Error", "out of memory");
+    else reply(fd, st == 200 ? "200 OK" : "400 Bad Request", "application/json", out, outlen);
+    free(out);
 }
 
 static void handle(int fd)
 {
-    char req[2048], method[8], target[512];
-    if (read_head(fd, req, sizeof req) || sscanf(req, "%7s %511s", method, target) != 2) {
+    char req[8192], method[8], target[512];
+    size_t got;
+    if (read_head(fd, req, sizeof req, &got) || sscanf(req, "%7s %511s", method, target) != 2
+        || strcspn(req + strlen(method) + 1, " \r\n") > 511) {       // a longer target would be cut short
         reply_text(fd, "400 Bad Request", "bad request");
+        return;
+    }
+    if (!strcmp(target, "/mcp") && C.mcp) {
+        const char *eoh = strstr(req, "\r\n\r\n"), *lf = strstr(req, "\n\n");
+        const char *body = eoh ? eoh + 4 : lf ? lf + 2 : req + got;     // no blank line (timed out): no body yet
+        if (!strcmp(method, "POST")) serve_mcp(fd, req, body, got - (size_t)(body - req));
+        else reply_h(fd, "405 Method Not Allowed", "text/plain", "Allow: POST\r\n", "POST JSON-RPC here", 18);
         return;
     }
     if (strcmp(method, "GET")) {
@@ -243,9 +351,11 @@ static void handle(int fd)
         if (!strcmp(path, "/down")) touch_down(sx, sy, sw, sh);
         else if (!strcmp(path, "/move")) touch_move(sx, sy, sw, sh);
         else {
+            gesture_lock();
             touch_down(sx, sy, sw, sh);
             usleep((useconds_t)query_int(q, "hold", 90, 10, 4000) * 1000);
             touch_up();
+            gesture_unlock();
         }
         reply_text(fd, "200 OK", "ok");
     } else if (!strcmp(path, "/up")) {
@@ -313,7 +423,7 @@ static void *server_thread(void *arg)
         if (s >= 0) close(s);
         sleep(10);
     }
-    LOG("%s on http://%s:%d/\n", VERSION, C.bind, C.port);
+    LOG("%s on http://%s:%d/ (MCP: %s)\n", REMOTE_VERSION, C.bind, C.port, C.mcp ? "/mcp" : "off");
     for (;;) {
         int c = accept4(s, NULL, NULL, SOCK_CLOEXEC);
         if (c < 0) {
@@ -354,6 +464,7 @@ __attribute__((visibility("default"))) int mpc_remote_addin_start(void)
     int bad = conf_load(&C, path);
     if (bad) LOG("%d line(s) of %s not understood, ignored\n", bad, path);
     if (!C.enabled) { LOG("disabled in %s\n", path); return -1; }
+    if (files_set_roots(C.mcp_files)) { LOG("mcp_files=%s not understood: MCP file access is off\n", C.mcp_files); files_set_roots("none"); }
     cap_set_rotation(C.screen_rotate);
     sigset_t all, old;
     sigfillset(&all);

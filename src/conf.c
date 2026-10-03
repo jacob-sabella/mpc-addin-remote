@@ -17,6 +17,8 @@ void conf_defaults(struct conf *c)
     c->max_fps = 10;
     c->max_clients = 6;
     c->nice = 10;
+    c->mcp = 1;
+    snprintf(c->mcp_files, sizeof c->mcp_files, "/media,/sdcard,/data/mpc-addins");
 }
 
 static int to_int(const char *v, int lo, int hi, int *out)
@@ -30,10 +32,10 @@ static int to_int(const char *v, int lo, int hi, int *out)
 
 int conf_line(struct conf *c, const char *line)
 {
-    char k[32], v[96];
+    char k[32], v[256];
     while (isspace((unsigned char)*line)) line++;
     if (!*line || *line == '#') return 0;
-    if (sscanf(line, " %31[a-z_] = %95s", k, v) != 2) return -1;
+    if (sscanf(line, " %31[a-z_] = %255s", k, v) != 2) return -1;
     if (!strcmp(k, "enabled")) return to_int(v, 0, 1, &c->enabled);
     if (!strcmp(k, "port")) return to_int(v, 1, 65535, &c->port);
     if (!strcmp(k, "touch_rotate") || !strcmp(k, "screen_rotate")) {
@@ -46,6 +48,13 @@ int conf_line(struct conf *c, const char *line)
     if (!strcmp(k, "max_fps")) return to_int(v, 1, 60, &c->max_fps);
     if (!strcmp(k, "max_clients")) return to_int(v, 1, 32, &c->max_clients);
     if (!strcmp(k, "nice")) return to_int(v, 0, 19, &c->nice);
+    if (!strcmp(k, "mcp")) return to_int(v, 0, 1, &c->mcp);
+    if (!strcmp(k, "mcp_files")) {
+        size_t n = strlen(v);
+        if (n >= sizeof c->mcp_files || (strcmp(v, "none") && v[0] != '/')) return -1;
+        memcpy(c->mcp_files, v, n + 1);
+        return 0;
+    }
     if (!strcmp(k, "bind")) {
         size_t n = strlen(v);
         if (n >= sizeof c->bind) return -1;
@@ -65,7 +74,7 @@ int conf_load(struct conf *c, const char *path)
 {
     FILE *f = fopen(path, "re");
     if (!f) return 0;
-    char line[256];
+    char line[512];
     int bad = 0;
     while (fgets(line, sizeof line, f)) {
         line[strcspn(line, "\r\n")] = 0;

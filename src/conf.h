@@ -12,6 +12,8 @@ struct conf {
     int max_fps;              // stream frame cap
     int max_clients;          // connections at once (streams count)
     int nice;                 // the addin threads' nice value, 0..19
+    int mcp;                  // mcp=0 turns the MCP endpoint (/mcp) off
+    char mcp_files[256];      // folders MCP may read files from, comma-separated, or none
 };
 
 void conf_defaults(struct conf *c);
