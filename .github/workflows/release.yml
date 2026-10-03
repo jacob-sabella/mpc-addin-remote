@@ -18,12 +18,12 @@ on:
 
 jobs:
   addin:
-    uses: jacob-sabella/mpc-vst-plugins/.github/workflows/addin-release.yml@1c4b4fc5a55419c1f0df0d90ac0979ba25c953cb
+    uses: jacob-sabella/mpc-vst-plugins/.github/workflows/addin-release.yml@83c6cbd2e815b893badb4b32076a29929fc67364
     permissions: { contents: write }
     with:
       tag: remote-addin-v${{ inputs.version }}
       version: ${{ inputs.version }}
-      tools_ref: 1c4b4fc5a55419c1f0df0d90ac0979ba25c953cb
+      tools_ref: 83c6cbd2e815b893badb4b32076a29929fc67364
       package_dir: build
       build: ./build.sh
       host_test: sudo sysctl -q vm.mmap_rnd_bits=28 && python3 -m pip install --quiet mcp && tests/test.sh
