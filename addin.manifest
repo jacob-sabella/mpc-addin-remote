@@ -1,0 +1,7 @@
+# Read by install.sh and uninstall.sh (mpc-addin-installer). See that repo's README for the fields.
+ADDIN_ID=remote
+ADDIN_NAME="MPC Remote addin"
+ADDIN_SO=mpc_remote_addin.so
+ADDIN_CONF=mpc_remote_addin.conf
+ADDIN_FILES="standalone"
+ADDIN_DONE="Open http://<device address>:8080 in a browser (port and bind are in mpc_remote_addin.conf)."

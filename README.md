@@ -84,11 +84,11 @@ sh uninstall.sh
 ```
 
 It installs into `/data/mpc-addins/remote/` (the root file system is often nearly full) and **adds** the `.so` to
-`LD_PRELOAD` in MPC's systemd service (`acvs`, or `inmusic-mpc`). Other addins already in it stay. Where the service
-already sets `LD_PRELOAD`, the installer edits that line in place and keeps a `.bak-remote-addin` copy. It doesn't
-add a drop-in, because a second `Environment=LD_PRELOAD=` replaces the whole list and silently drops the other
-addins. Where nothing sets it, a drop-in does. Reinstalling keeps your settings file. Uninstalling removes only
-this addin from the list.
+`LD_PRELOAD` in MPC's systemd service (`acvs`, or `inmusic-mpc`); other addins already in it stay. Reinstalling keeps
+your settings file; uninstalling takes only this addin out of the list. The scripts are the shared
+[mpc-addin-installer](../mpc-addin-installer) (identical in every addin; `addin.manifest` describes this one), whose
+README has the rules: why it edits the line that takes effect rather than adding a second `LD_PRELOAD=`, the backup
+it keeps, and the drop-in shared by all addins.
 
 If `/data` isn't mounted when MPC starts, the loader prints a warning and MPC starts without the addin.
 
@@ -112,8 +112,9 @@ tests/test.sh       # offline, on the build machine (x86)
 `tests/test.sh` runs the unit tests, then `tests/test_remote.py` against the server built with ASan+UBSan and
 again with TSan. Test builds (`-DREMOTE_TEST`) can stand a raw file in for the display (`REMOTE_FAKE_FB`) and a
 file in for the touchscreen (`REMOTE_FAKE_TOUCH`); release builds can't. The test then preloads the real `.so` into
-a process named `MPC` and one named otherwise, and runs `tests/test_install.sh` against scratch systemd layouts
-(`BUSYBOX=/path/to/busybox` runs it in the device's shell).
+a process named `MPC` and one named otherwise, and runs `tests/test_install.sh`: the installer with this manifest against a scratch systemd tree, and the
+copy here checked against mpc-addin-installer when it sits next to this repo (`BUSYBOX=/path/to/busybox` runs it in
+the device's shell).
 
 ## Not included
 

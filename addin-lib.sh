@@ -1,8 +1,10 @@
-# Shared by install.sh and uninstall.sh: MPC's systemd service and its LD_PRELOAD list.
+# mpc-addin-installer: shared by install.sh and uninstall.sh (identical in every addin; only addin.manifest differs).
+# MPC's systemd service, its LD_PRELOAD list, and the manifest. ADDIN_LIB_VERSION identifies this copy.
+ADDIN_LIB_VERSION=1
 # Tests set ADDIN_INSTALL_TEST=1, SYSTEMD_ROOT (a scratch tree holding the unit files) and ADDIN_TEST_LOG.
 
 UNIT_DIRS="/etc/systemd/system /run/systemd/system /usr/lib/systemd/system /lib/systemd/system"
-DROPIN_NAME=50-mpc-remote-addin.conf
+DROPIN_NAME=50-mpc-addins.conf   # one drop-in shared by every addin, when the service sets no LD_PRELOAD itself
 
 svc() {   # systemctl, or a log line under test
     if [ -n "$ADDIN_INSTALL_TEST" ]; then echo "systemctl $*" >> "${ADDIN_TEST_LOG:-/dev/null}"; return 0; fi
@@ -60,10 +62,12 @@ edit_preload() {   # file mode so
 
 preload_add() {   # service unit so
     if [ -n "$2" ]; then
-        bak="$2.bak-remote-addin"
-        [ -f "$bak" ] || cp "$2" "$bak"
+        bak="$2.bak-mpc-addins"   # the first edit of a file not ours keeps a backup; the shared drop-in needs none
+        [ "$(basename "$2")" = "$DROPIN_NAME" ] || [ -f "$bak" ] || cp "$2" "$bak"
+        cp "$2" "$2.prev"
         edit_preload "$2" add "$3"
-        grep -q "$3" "$2" || { cp "$bak" "$2"; echo "error: editing $2 failed; restored" >&2; exit 1; }
+        grep -qF "$3" "$2" || { mv "$2.prev" "$2"; echo "error: editing $2 failed; restored" >&2; exit 1; }
+        rm -f "$2.prev"
     else
         d="$SYSTEMD_ROOT/etc/systemd/system/$1.service.d"
         mkdir -p "$d"
@@ -72,13 +76,37 @@ preload_add() {   # service unit so
     fi
 }
 
-preload_remove() {   # service so
+preload_remove() {   # service so: take so out of every LD_PRELOAD; the shared drop-in goes once it preloads nothing
     for d in $UNIT_DIRS; do
         for f in "$SYSTEMD_ROOT$d/$1.service" "$SYSTEMD_ROOT$d/$1.service.d/"*.conf; do
-            [ -f "$f" ] && grep -q "$2" "$f" || continue
-            if [ "$(basename "$f")" = "$DROPIN_NAME" ]; then rm -f "$f"; else edit_preload "$f" remove "$2"; fi
+            [ -f "$f" ] && grep -qF "$2" "$f" || continue
+            edit_preload "$f" remove "$2"
+            if [ "$(basename "$f")" = "$DROPIN_NAME" ] && ! grep -q 'LD_PRELOAD=' "$f"; then rm -f "$f"; fi
         done
     done
 }
 
-conf_port() { sed -n 's/^port *= *\([0-9]*\).*/\1/p' "$DIR/mpc_remote_addin.conf" | tail -n 1; }
+# addin.manifest, next to install.sh: shell assignments, checked before anything uses them.
+#   ADDIN_ID      folder and identity: /data/mpc-addins/<id> (letters, digits, - and _)
+#   ADDIN_NAME    shown to the user
+#   ADDIN_SO      the library, preloaded into MPC
+#   ADDIN_CONF    settings file: installed only when the folder has none, so the user's edits survive ("" none)
+#   ADDIN_FILES   other files, replaced on every install ("" none)
+#   ADDIN_DONE    a line printed after installing ("" none)
+load_manifest() {
+    [ -f addin.manifest ] || die "addin.manifest is missing next to install.sh"
+    ADDIN_ID=""; ADDIN_NAME=""; ADDIN_SO=""; ADDIN_CONF=""; ADDIN_FILES=""; ADDIN_DONE=""
+    . ./addin.manifest
+    case "$ADDIN_ID" in ""|*[!A-Za-z0-9_-]*) die "addin.manifest: bad ADDIN_ID '$ADDIN_ID'" ;; esac
+    for f in "$ADDIN_SO" $ADDIN_CONF $ADDIN_FILES; do
+        case "$f" in ""|*/*|.*|*[!A-Za-z0-9._-]*) die "addin.manifest: bad file name '$f'" ;; esac
+    done
+    case "$ADDIN_SO" in *.so) ;; *) die "addin.manifest: ADDIN_SO must be a .so" ;; esac
+    [ -n "$ADDIN_NAME" ] || ADDIN_NAME="$ADDIN_ID"
+    DIR="${DIR:-/data/mpc-addins/$ADDIN_ID}"
+}
+
+check_dir() {
+    case "$DIR" in /*) ;; *) die "-t must be an absolute path" ;; esac
+    case "$DIR" in *[!A-Za-z0-9/._-]*) die "the folder may only contain letters, digits and / . _ -" ;; esac
+}

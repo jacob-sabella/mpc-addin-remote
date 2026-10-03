@@ -17,5 +17,5 @@ docker run --rm --platform linux/arm/v7 -u "$(id -u):$(id -g)" -v "$PWD":/b -w /
   case "$max" in GLIBC_2.[0-9]|GLIBC_2.[12][0-9]|GLIBC_2.3[01]) ;; *) echo "too new for older MPC OS: $max" >&2; exit 1 ;; esac
   readelf -d build/mpc_remote_addin.so | grep NEEDED
 '
-cp -f mpc_remote_addin.conf install.sh uninstall.sh preload.sh build/   # build/ is the folder to copy to a device
+cp -f mpc_remote_addin.conf addin.manifest install.sh uninstall.sh addin-lib.sh build/   # build/ is the folder to copy to a device
 ls -l build/mpc_remote_addin.so build/standalone
