@@ -9,7 +9,7 @@ void conf_defaults(struct conf *c)
 {
     memset(c, 0, sizeof *c);
     c->enabled = 1;
-    snprintf(c->bind, sizeof c->bind, "0.0.0.0");
+    snprintf(c->bind, sizeof c->bind, "127.0.0.1");
     c->port = 6720;
     snprintf(c->touch_device, sizeof c->touch_device, "auto");
     c->screen_rotate = -1;    // auto: a portrait scanout (the MPC Key 37's 800 x 1280 panel) turns 90 degrees

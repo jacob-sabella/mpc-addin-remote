@@ -5,16 +5,29 @@ the screen live and drive it with a mouse or a finger. It's an **addin**: a smal
 start through `LD_PRELOAD`, running inside the MPC process. Nothing else is installed and no system binary is
 changed.
 
-It is also an **MCP server** (`http://<device>:6720/mcp`), so an AI model can see the screen, touch it, play MIDI into
+It is also an **MCP server** (`/mcp`), so an AI model can see the screen, touch it, play MIDI into
 MPC and read the device's status and files.
 
 **Status:** passes the offline tests (x86: unit, the HTTP server and the MCP endpoint under ASan+UBSan and TSan, the
 official MCP Python SDK as a client, the preload gate, the installer under busybox) and builds for armhf (glibc
 symbols up to 2.31). Runs on an MPC: the HTTP routes, the web page and every MCP tool.
 
+## Connecting: an SSH tunnel
+
+The addin listens on the device only (`bind=127.0.0.1`): it has no login, and it runs as root inside MPC. To reach it
+from a computer, open an SSH tunnel and leave it running:
+
+```sh
+ssh -N -L 6720:127.0.0.1:6720 root@<device address>
+```
+
+Then use `http://localhost:6720` on that computer, as in the rest of this file. To open it to your network instead,
+set `bind=0.0.0.0` in the settings: anyone who can reach the port can then see and touch the screen, send MIDI into
+MPC and read the `mcp_files` folders.
+
 ## What it does
 
-- `http://<device>:6720/`: the live screen, scaled to the window. Click or drag on it to touch, with a half
+- `http://localhost:6720/`: the live screen, scaled to the window. Click or drag on it to touch, with a half
   resolution option for slow networks.
 - An HTTP API for scripts:
 
@@ -34,7 +47,7 @@ Coordinates are screen pixels (`/info` gives the size).
 2025-03-26 to 2025-11-25). Add it to a client, for example Claude Code:
 
 ```sh
-claude mcp add --transport http mpc http://<device>:6720/mcp
+claude mcp add --transport http mpc http://localhost:6720/mcp   # with the tunnel open
 ```
 
 Tools:
@@ -109,7 +122,7 @@ An addin shares MPC's process, so it is written so that it can't hurt MPC:
 | Key | Default | |
 |---|---|---|
 | `enabled` | 1 | 0 keeps it loaded but idle |
-| `bind` | 0.0.0.0 | listen address. **There is no login:** anyone who can reach the port sees and touches the screen. Use `127.0.0.1` and an SSH tunnel on a network you don't trust |
+| `bind` | 127.0.0.1 | listen address: the device only, reached through an SSH tunnel. `0.0.0.0` is every interface. **There is no login:** anyone who can reach the port sees and touches the screen |
 | `port` | 6720 | |
 | `touch_device` | auto | or `/dev/input/eventN` |
 | `screen_rotate` | auto | the clockwise turn that shows the scanout upright: auto (portrait turns 90), 0, 90, 180, 270 |

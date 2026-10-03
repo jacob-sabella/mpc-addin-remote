@@ -4,7 +4,7 @@
 
 struct conf {
     int enabled;              // enabled=0 keeps the addin loaded but idle
-    char bind[46];            // listen address (0.0.0.0: every interface)
+    char bind[46];            // listen address (127.0.0.1: the device only; 0.0.0.0: every interface)
     int port;
     char touch_device[64];    // auto, or /dev/input/eventN
     int screen_rotate;        // -1 auto, or 0, 90, 180, 270: the clockwise turn that makes the scanout upright
