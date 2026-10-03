@@ -169,6 +169,8 @@ a process named `MPC` and one named otherwise, and runs `tests/test_install.sh`:
 (`BUSYBOX=/path/to/busybox` runs it in the device's shell). The installer and the release tool come from
 mpc-vst-plugins checked out next to this repo (or `MPC_VST=/path`).
 
+CI (`.github/workflows`): `test.yml` runs the tests and the armhf build on every push; `release.yml` (Actions > Release, with the version) builds the zip and attaches it to a draft release, to publish once it has been tried on a device.
+
 ## Not included
 
 Pressing the hardware buttons, pads and Q-Links (they arrive as MIDI from the control surface, not as input
