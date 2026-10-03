@@ -5,8 +5,12 @@ the screen live and drive it with a mouse or a finger. It's an **addin**: a smal
 start through `LD_PRELOAD`, running inside the MPC process. Nothing else is installed and no system binary is
 changed.
 
-**Status:** passes the offline tests (x86: unit, the HTTP server under ASan+UBSan and TSan, the preload gate, the
-installer under busybox) and builds for armhf (glibc symbols up to 2.17).
+It is also an **MCP server** (`http://<device>:8080/mcp`), so an AI model can see the screen, touch it, play MIDI into
+MPC and read the device's status and files.
+
+**Status:** passes the offline tests (x86: unit, the HTTP server and the MCP endpoint under ASan+UBSan and TSan, the
+official MCP Python SDK as a client, the preload gate, the installer under busybox) and builds for armhf (glibc
+symbols up to 2.17). The MCP tools have not yet been run on a device.
 
 ## What it does
 
@@ -23,6 +27,48 @@ installer under busybox) and builds for armhf (glibc symbols up to 2.17).
 | `GET /info` | JSON: screen size and pixel format, capture state, the touch device, rotations, the last frame's capture and encode times |
 
 Coordinates are screen pixels (`/info` gives the size).
+
+## MCP (for AI models)
+
+`POST /mcp` speaks the Model Context Protocol (Streamable HTTP, a JSON reply per request, protocol versions
+2025-03-26 to 2025-11-25). Add it to a client, for example Claude Code:
+
+```sh
+claude mcp add --transport http mpc http://<device>:8080/mcp
+```
+
+Tools:
+
+| Tool | |
+|---|---|
+| `screenshot` | the screen, or a region of it, at zoom 0.5 to 4, optionally with a grid labelled in screen pixels |
+| `tap`, `double_tap`, `long_press` | touch a point |
+| `drag` | slide a finger from one point to another (faders, knobs, moving things) |
+| `scroll` | swipe a list or page up, down, left or right |
+| `touch` | one step of a gesture of its own: finger down, move or up |
+| `wait_for_screen` | wait until the screen changes (or stops changing) |
+| `get_screen_info` | the screen size, whether the display and touchscreen were found, the version |
+| `play_notes` | play notes or chords (names like `C3`, `F#2`, or numbers) with a length and velocity, through MPC's MIDI input |
+| `send_midi` | any MIDI message: CC, program change, pitch bend, pressure, transport (start/stop/continue/clock), MMC, raw SysEx |
+| `midi_listen` | collect what MPC sends to the addin's MIDI input port for a while |
+| `midi_status` | the addin's MIDI port and the device's MIDI clients and connections |
+| `device_status` | OS, uptime, CPU (and MPC's share), memory, temperatures, storage, network addresses |
+| `list_files`, `find_files`, `read_text_file` | browse and read text files under `mcp_files` (read-only) |
+
+Every coordinate, at any zoom, is a pixel of the full-size upright screen. Touch tools wait for the screen to
+settle, say which part of it changed, and return a screenshot, so a model sees the result of each touch.
+
+**MIDI:** the addin opens an ALSA sequencer client, "MPC Remote", with an output port (notes and messages to MPC) and
+an input port (what MPC sends back). MPC sees a new port at once; to play a track from it, enable it for tracks in
+Preferences > MIDI (or MIDI Devices), and pick it as the track's input if the track isn't set to all. Note names put
+middle C (60) at C3.
+
+**Files:** `list_files`, `find_files` and `read_text_file` see only the folders in `mcp_files` (symbolic links that
+lead out of them are refused). Nothing can be written or deleted through MCP.
+
+**Security:** like the rest of the server there is no login. A request with an `Origin` header must come from the
+same host, and the `Host` must be an IP address, `localhost` or a `.local` name, so a web page can't reach the
+endpoint through DNS rebinding. Bodies are limited to 64 KB. `mcp=0` turns the endpoint off.
 
 ## How it works
 
@@ -71,6 +117,8 @@ An addin shares MPC's process, so it is written so that it can't hurt MPC:
 | `max_fps` | 10 | stream frame cap (1 to 60) |
 | `max_clients` | 6 | connections at once |
 | `nice` | 10 | the addin threads' nice value (0 to 19) |
+| `mcp` | 1 | 0 turns the MCP endpoint (`/mcp`) off |
+| `mcp_files` | /media,/sdcard,/data/mpc-addins | the folders MCP's file tools may read, comma-separated absolute paths (at most 8), or `none` |
 
 Settings are read when MPC starts.
 
@@ -111,8 +159,11 @@ tests/test.sh       # offline, on the build machine (x86)
 tools/release.sh 1.0.0   # dist/MPC-Remote-addin-1.0.0-mpc-armv7.zip, with the installer, checked as the catalog does
 ```
 
-`tests/test.sh` runs the unit tests, then `tests/test_remote.py` against the server built with ASan+UBSan and
-again with TSan. Test builds (`-DREMOTE_TEST`) can stand a raw file in for the display (`REMOTE_FAKE_FB`) and a
+`tests/test.sh` runs the unit tests, then `tests/test_remote.py` and `tests/test_mcp.py` against the server built
+with ASan+UBSan and again with TSan, then `tests/test_mcp_sdk.py` (the official MCP Python SDK as the client; set
+`MCP_PYTHON` to a Python that has the `mcp` package, otherwise it is skipped). The MIDI tests need the host's ALSA
+sequencer (`aseqdump`, `aseqsend`) and skip without it. `tools/gen_mcp_tools.py` writes the tool definitions into
+`src/mcp_tools.h`; the tests check that it is up to date. Test builds (`-DREMOTE_TEST`) can stand a raw file in for the display (`REMOTE_FAKE_FB`) and a
 file in for the touchscreen (`REMOTE_FAKE_TOUCH`); release builds can't. The test then preloads the real `.so` into
 a process named `MPC` and one named otherwise, and runs `tests/test_install.sh`: the shared installer with this manifest against a scratch systemd tree
 (`BUSYBOX=/path/to/busybox` runs it in the device's shell). The installer and the release tool come from
@@ -120,8 +171,8 @@ mpc-vst-plugins checked out next to this repo (or `MPC_VST=/path`).
 
 ## Not included
 
-The hardware buttons, pads and Q-Links (they arrive as MIDI from the control surface, not as input events),
-audio, and any login.
+Pressing the hardware buttons, pads and Q-Links (they arrive as MIDI from the control surface, not as input
+events; MCP's `play_notes` plays notes instead), audio, and any login.
 
 ## License
 
