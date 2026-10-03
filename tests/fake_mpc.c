@@ -1,4 +1,4 @@
-// A stand-in process for the preload smoke test: copied as "MPC" (the add-in starts) and as "other" (it must not).
+// A stand-in process for the preload smoke test: copied as "MPC" (the addin starts) and as "other" (it must not).
 #include <unistd.h>
 int main(void)
 {

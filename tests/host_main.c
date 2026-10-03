@@ -1,4 +1,4 @@
-// The add-in's server in a test process: started directly (the process isn't MPC), with REMOTE_FAKE_FB and
+// The addin's server in a test process: started directly (the process isn't MPC), with REMOTE_FAKE_FB and
 // REMOTE_FAKE_TOUCH standing in for the display and the touchscreen. Runs until killed.
 #include <stdio.h>
 #include <unistd.h>

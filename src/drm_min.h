@@ -1,4 +1,4 @@
-// The few DRM/KMS ioctls the add-in uses, written out by hand from the Linux uapi (drm.h, drm_mode.h) so the
+// The few DRM/KMS ioctls the addin uses, written out by hand from the Linux uapi (drm.h, drm_mode.h) so the
 // build needs no kernel or libdrm headers. These are stable kernel ABI.
 #ifndef DRM_MIN_H
 #define DRM_MIN_H

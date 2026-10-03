@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install.sh / uninstall.sh against scratch copies of systemd unit layouts (run with busybox sh where available,
-# the device's shell). Checks that LD_PRELOAD keeps every other add-in, installs are idempotent and uninstall
+# the device's shell). Checks that LD_PRELOAD keeps every other addin, installs are idempotent and uninstall
 # restores the line.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -15,7 +15,7 @@ SO="$T/addin/mpc_remote_addin.so"
 unit() { mkdir -p "$T/root/usr/lib/systemd/system"; printf '[Unit]\nDescription=MPC\n\n[Service]\n%s\nExecStart=/usr/bin/az01-launch-MPC\n' "$1" > "$T/root/usr/lib/systemd/system/acvs.service"; }
 line() { grep '^Environment' "$T/root/usr/lib/systemd/system/acvs.service" || true; }
 
-# 1. the service already preloads two add-ins
+# 1. the service already preloads two addins
 rm -rf "$T/root" "$T/addin"; pkg
 unit 'Environment=LD_PRELOAD=/usr/lib/a.so:/usr/lib/b.so'
 run install.sh
@@ -51,11 +51,11 @@ run install.sh
 run uninstall.sh
 [ ! -e "$D" ] && ok "drop-in removed" || bad "drop-in left"
 
-# 4. only this add-in in the unit's line: uninstall drops the assignment
+# 4. only this addin in the unit's line: uninstall drops the assignment
 rm -rf "$T/root" "$T/addin" "$T/log"; pkg
 unit "Environment=LD_PRELOAD=$SO"
 run uninstall.sh
-[ -z "$(line)" ] && ok "a line holding only this add-in goes away" || bad "only: $(line)"
+[ -z "$(line)" ] && ok "a line holding only this addin goes away" || bad "only: $(line)"
 
 # 5. another drop-in sets LD_PRELOAD (it wins over the unit): that one is edited
 rm -rf "$T/root" "$T/addin" "$T/log"; pkg

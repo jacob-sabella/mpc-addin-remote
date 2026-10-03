@@ -1,6 +1,6 @@
 // mpc-remote-addin: the MPC's screen and touchscreen over HTTP, from inside the MPC process (LD_PRELOAD).
 // It starts only in the process whose executable is named MPC. The launch script and anything else that inherits
-// LD_PRELOAD load it and do nothing. Everything runs on the add-in's own threads, at normal scheduling and a low
+// LD_PRELOAD load it and do nothing. Everything runs on the addin's own threads, at normal scheduling and a low
 // priority, with every signal blocked so MPC's signals still go to MPC's threads.
 #define _GNU_SOURCE
 #include "capture.h"

@@ -1,11 +1,11 @@
 #!/bin/sh
-# Install mpc-preload-addin-remote on an MPC OS device. Run on the device as root, from the unpacked folder:
+# Install mpc-addin-remote on an MPC OS device. Run on the device as root, from the unpacked folder:
 #   sh install.sh [-y] [-n] [-t <folder>]
 # Copies mpc_remote_addin.so (and, the first time, mpc_remote_addin.conf) into <folder> (default
 # /data/mpc-addins/remote), adds the .so to the LD_PRELOAD of MPC's systemd service, and restarts MPC.
-# LD_PRELOAD is extended, never replaced: other add-ins already in it stay. Where the service already sets it, that
+# LD_PRELOAD is extended, never replaced: other addins already in it stay. Where the service already sets it, that
 # line is edited in place (backed up first). A drop-in would replace the whole list. Otherwise a drop-in sets it.
-#   -y  don't ask   -n  don't restart MPC (the add-in starts with MPC's next start)
+#   -y  don't ask   -n  don't restart MPC (the addin starts with MPC's next start)
 set -e
 cd "$(dirname "$0")"
 DIR=/data/mpc-addins/remote; YES=0; RESTART=1
@@ -31,7 +31,7 @@ fi
 
 SVC=$(mpc_service)
 UNIT=$(unit_with_preload "$SVC")
-echo "Installing mpc-preload-addin-remote:"
+echo "Installing mpc-addin-remote:"
 echo "  $SO"
 if [ -n "$UNIT" ]; then echo "  LD_PRELOAD in $UNIT gains it (a backup is kept)"; else echo "  a drop-in sets LD_PRELOAD for $SVC"; fi
 [ $RESTART = 1 ] && echo "  then MPC restarts: save your project first"
@@ -47,4 +47,4 @@ preload_add "$SVC" "$UNIT" "$SO"
 svc daemon-reload
 sync
 if [ $RESTART = 1 ]; then svc restart "$SVC"; echo "Done. MPC restarted: open http://<this device's address>:$(conf_port)/"
-else echo "Done. The add-in starts with MPC's next start."; fi
+else echo "Done. The addin starts with MPC's next start."; fi

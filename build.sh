@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The add-in for 32-bit ARM MPC OS devices: build/mpc_remote_addin.so (and build/standalone, for trying it without
+# The addin for 32-bit ARM MPC OS devices: build/mpc_remote_addin.so (and build/standalone, for trying it without
 # restarting MPC), with the install scripts and default settings beside them. Built against glibc 2.31 so it loads on older MPC OS too. Needs Docker with QEMU for arm32v7.
 set -euo pipefail
 cd "$(dirname "$0")"

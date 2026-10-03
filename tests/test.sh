@@ -26,7 +26,7 @@ printf 'port=%s\nbind=127.0.0.1\n' "$PORT" > "$B/smoke.conf"
 check_port() { python3 -c "import socket,sys; s=socket.socket(); s.settimeout(1); sys.exit(s.connect_ex(('127.0.0.1',$PORT)))"; }
 MPC_REMOTE_ADDIN_CONF="$B/smoke.conf" LD_PRELOAD="$PWD/$B/mpc_remote_addin.so" "$B/other" & P=$!
 sleep 0.5
-if check_port; then echo "FAIL the add-in started in a process not named MPC"; kill $P; exit 1; fi
+if check_port; then echo "FAIL the addin started in a process not named MPC"; kill $P; exit 1; fi
 kill $P; wait $P 2>/dev/null || true
 echo "ok   preload: stays out of other processes"
 MPC_REMOTE_ADDIN_CONF="$B/smoke.conf" LD_PRELOAD="$PWD/$B/mpc_remote_addin.so" "$B/MPC" 2>"$B/smoke.log" & P=$!

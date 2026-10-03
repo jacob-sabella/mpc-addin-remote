@@ -1,5 +1,5 @@
 #!/bin/sh
-# Remove mpc-preload-addin-remote: take its .so out of LD_PRELOAD (other add-ins stay), restart MPC, delete the folder.
+# Remove mpc-addin-remote: take its .so out of LD_PRELOAD (other addins stay), restart MPC, delete the folder.
 #   sh uninstall.sh [-y] [-n] [-t <folder>]
 set -e
 cd "$(dirname "$0")"
@@ -20,7 +20,7 @@ SO="$DIR/mpc_remote_addin.so"
 . ./preload.sh
 SVC=$(mpc_service)
 if [ $YES = 0 ]; then
-    printf "Remove the remote add-in%s? [y/N] " "$([ $RESTART = 1 ] && echo ' and restart MPC')"; read -r ok
+    printf "Remove the remote addin%s? [y/N] " "$([ $RESTART = 1 ] && echo ' and restart MPC')"; read -r ok
     case "$ok" in y|Y|yes) ;; *) echo "cancelled"; exit 1 ;; esac
 fi
 preload_remove "$SVC" "$SO"

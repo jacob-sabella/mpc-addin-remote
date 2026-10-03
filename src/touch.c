@@ -22,7 +22,7 @@ static char devname[64] = "none";
 
 // How well a device looks like the touchscreen: 0 not at all (no multitouch axes, or virtual), 1 a multitouch
 // device, 2 one that also says it is on the screen (INPUT_PROP_DIRECT; not every driver sets it: the MPC Key 37's
-// ILI2117 doesn't). A mouse add-in's touch device has no multitouch axes.
+// ILI2117 doesn't). A mouse addin's touch device has no multitouch axes.
 static int touch_score(int f)
 {
     unsigned long abs[(ABS_MAX + 1) / (8 * sizeof(long)) + 1] = { 0 };

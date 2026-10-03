@@ -1,7 +1,7 @@
-# mpc-preload-addin-remote
+# mpc-addin-remote
 
 The screen and touchscreen of an Akai MPC OS standalone device (MPC Live/One/X/Key, Force) in a web browser: watch
-the screen live and drive it with a mouse or a finger. It's an **add-in**: a small shared library that MPC loads at
+the screen live and drive it with a mouse or a finger. It's an **addin**: a small shared library that MPC loads at
 start through `LD_PRELOAD`, running inside the MPC process. Nothing else is installed and no system binary is
 changed.
 
@@ -27,7 +27,7 @@ Coordinates are screen pixels (`/info` gives the size).
 ## How it works
 
 - **Screen:** DRM/KMS, not `/dev/mem`. A root process may get a handle to any framebuffer (`GETFB2`, needs
-  `CAP_SYS_ADMIN`) on its own DRM file and map it read-only (`MAP_DUMB`). The add-in finds the lit CRTC on
+  `CAP_SYS_ADMIN`) on its own DRM file and map it read-only (`MAP_DUMB`). The addin finds the lit CRTC on
   `/dev/dri/card*` and asks it for its framebuffer on every frame, so page flips are followed. Size and pixel format
   (XRGB/XBGR 8888, RGB565) come from the device; tiled or compressed buffers are refused. The scanout is the
   physical panel, which may be portrait with the UI drawn into it on its side (the MPC Key 37's is 800 x 1280):
@@ -38,13 +38,13 @@ Coordinates are screen pixels (`/info` gives the size).
 - **Touch:** events written into the touchscreen's own evdev node, which MPC reads like a real finger (slot 0 of
   multitouch protocol B, plus `BTN_TOUCH` and `ABS_X/Y`). The device is found automatically: the first
   multitouch device that isn't virtual, preferring one that says it is on the screen (not every driver does), so a
-  mouse add-in's touch device, which has no multitouch axes, is skipped. Its axis ranges are read from the device. Touches are mapped from the upright picture back into the scanout, which is the touch
+  mouse addin's touch device, which has no multitouch axes, is skipped. Its axis ranges are read from the device. Touches are mapped from the upright picture back into the scanout, which is the touch
   panel's own frame, so normally no touch rotation is needed (`touch_rotate` is there for a panel mounted
   otherwise).
 
 ### Living inside MPC
 
-An add-in shares MPC's process, so it is written so that it can't hurt MPC:
+An addin shares MPC's process, so it is written so that it can't hurt MPC:
 - it starts only in the process whose executable is named `MPC`. The launch script and anything else that
   inherits `LD_PRELOAD` load it and do nothing (`MPC_REMOTE_ADDIN_DISABLE=1` also keeps it off);
 - it runs only on its own threads: normal scheduling even when created from a real-time thread, nice 10 by
@@ -52,7 +52,7 @@ An add-in shares MPC's process, so it is written so that it can't hurt MPC:
 - no process-wide changes: no `signal()`, `send(MSG_NOSIGNAL)` instead of ignoring `SIGPIPE`, every descriptor
   close-on-exec;
 - bounded work: at most `max_clients` connections and two streams, 5 s socket timeouts, frames capped at `max_fps`;
-- it exports one symbol, `mpc_remote_addin_start`, so it can't shadow anything MPC or another add-in uses;
+- it exports one symbol, `mpc_remote_addin_start`, so it can't shadow anything MPC or another addin uses;
 - if the port is taken it retries every 10 s rather than failing; if no display or touchscreen is found, the rest
   still works.
 
@@ -70,7 +70,7 @@ An add-in shares MPC's process, so it is written so that it can't hurt MPC:
 | `touch_rotate` | 0 | how the touch panel sits against the scanout: 0, 90, 180 or 270 |
 | `max_fps` | 10 | stream frame cap (1 to 60) |
 | `max_clients` | 6 | connections at once |
-| `nice` | 10 | the add-in threads' nice value (0 to 19) |
+| `nice` | 10 | the addin threads' nice value (0 to 19) |
 
 Settings are read when MPC starts.
 
@@ -84,17 +84,17 @@ sh uninstall.sh
 ```
 
 It installs into `/data/mpc-addins/remote/` (the root file system is often nearly full) and **adds** the `.so` to
-`LD_PRELOAD` in MPC's systemd service (`acvs`, or `inmusic-mpc`). Other add-ins already in it stay. Where the service
+`LD_PRELOAD` in MPC's systemd service (`acvs`, or `inmusic-mpc`). Other addins already in it stay. Where the service
 already sets `LD_PRELOAD`, the installer edits that line in place and keeps a `.bak-remote-addin` copy. It doesn't
 add a drop-in, because a second `Environment=LD_PRELOAD=` replaces the whole list and silently drops the other
-add-ins. Where nothing sets it, a drop-in does. Reinstalling keeps your settings file. Uninstalling removes only
-this add-in from the list.
+addins. Where nothing sets it, a drop-in does. Reinstalling keeps your settings file. Uninstalling removes only
+this addin from the list.
 
-If `/data` isn't mounted when MPC starts, the loader prints a warning and MPC starts without the add-in.
+If `/data` isn't mounted when MPC starts, the loader prints a warning and MPC starts without the addin.
 
 ### Trying it without restarting MPC
 
-DRM capture and touch injection work from any root process, so `build/standalone` runs the add-in in a process of
+DRM capture and touch injection work from any root process, so `build/standalone` runs the addin in a process of
 its own, next to a running MPC:
 
 ```sh

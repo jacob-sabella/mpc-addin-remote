@@ -3,7 +3,7 @@
 #define CONF_H
 
 struct conf {
-    int enabled;              // enabled=0 keeps the add-in loaded but idle
+    int enabled;              // enabled=0 keeps the addin loaded but idle
     char bind[46];            // listen address (0.0.0.0: every interface)
     int port;
     char touch_device[64];    // auto, or /dev/input/eventN
@@ -11,7 +11,7 @@ struct conf {
     int touch_rotate;         // 0, 90, 180 or 270: how the touch panel sits against the scanout
     int max_fps;              // stream frame cap
     int max_clients;          // connections at once (streams count)
-    int nice;                 // the add-in threads' nice value, 0..19
+    int nice;                 // the addin threads' nice value, 0..19
 };
 
 void conf_defaults(struct conf *c);

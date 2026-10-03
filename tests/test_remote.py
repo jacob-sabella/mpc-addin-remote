@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive the add-in's HTTP server (tests/host_main built with sanitizers) against a fake framebuffer and touch
+"""Drive the addin's HTTP server (tests/host_main built with sanitizers) against a fake framebuffer and touch
 file: the page, /info, PNG frames (decoded and compared pixel by pixel), the stream, touch events, bad requests
 and the connection limits.  Usage: test_remote.py <host_main binary>"""
 import json, os, socket, struct, subprocess, sys, tempfile, threading, time, urllib.request, zlib
