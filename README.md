@@ -157,9 +157,12 @@ If `/data` isn't mounted when MPC starts, the loader prints a warning and MPC st
 ### Trying it without restarting MPC
 
 DRM capture and touch injection work from any root process, so `build/standalone` runs the addin in a process of
-its own, next to a running MPC:
+its own, next to a running MPC. The installer copies `standalone` into the addin folder without its execute bit, so
+set it first:
 
 ```sh
+cd /data/mpc-addins/remote
+chmod +x standalone
 printf 'port=8090\nbind=127.0.0.1\n' > /tmp/remote.conf
 MPC_REMOTE_ADDIN_CONF=/tmp/remote.conf ./standalone ./mpc_remote_addin.so
 ```
