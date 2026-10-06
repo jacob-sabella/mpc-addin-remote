@@ -8,6 +8,8 @@ import base64, json, os, shutil, socket, struct, subprocess, sys, tempfile, thre
 
 W, H = 320, 200
 fails = 0
+# The version the addin reports, from the header it is built with.
+VERSION = open(os.path.join(os.path.dirname(__file__), "..", "src", "version.h")).read().split('REMOTE_VERSION "')[1].split('"')[0]
 
 
 def check(cond, what):
@@ -199,7 +201,7 @@ def protocol(srv, port):
     st, _, _ = http(port, "POST", "/mcp", big)
     check(st == 200, "a 60 KB body arrives whole")
     st, _, body = http(port, "GET", "/info", None)
-    check(st == 200 and json.loads(body)["version"] == "0.2.2", "the HTTP API still answers")
+    check(st == 200 and json.loads(body)["version"] == VERSION, "the HTTP API still answers")
 
 
 def expected(fb, x0, y0, w, h, z2):
