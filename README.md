@@ -23,7 +23,8 @@ ssh -N -L 6720:127.0.0.1:6720 root@<device address>
 
 Then use `http://localhost:6720` on that computer, as in the rest of this file. To open it to your network instead,
 set `bind=0.0.0.0` in the settings: anyone who can reach the port can then see and touch the screen, send MIDI into
-MPC and read the `mcp_files` folders.
+MPC and read the `mcp_files` folders. A first install that asks questions (no `-y`) offers to do this for you; the
+answer defaults to no, and reinstalls keep whatever the settings file says.
 
 ## What it does
 
@@ -158,11 +159,12 @@ If `/data` isn't mounted when MPC starts, the loader prints a warning and MPC st
 
 Check that MPC really loaded it: `tr '\0' '\n' < /proc/$(pidof MPC)/environ | grep LD_PRELOAD` should list
 `mpc_remote_addin.so`, and `wget -qO- http://127.0.0.1:6720/info` on the device should answer. The installer adds the
-library to MPC's systemd service, which is enough on stock MPC OS. Mods that launch MPC from their own script can
-replace that environment: MockbaMod, for instance, exports `LD_PRELOAD` from `/dev/shm/.LD_PRELOAD`, which its
-`AddOns/run_*.sh` scripts fill in, so the addin has to be listed there (an installer from mpc-vst-plugins that does
-this itself is in progress). Until then, on MockbaMod add an `AddOns/run_remote.sh` that appends the `.so` to that
-file, as the other addins' scripts do.
+library to MPC's systemd service, which is enough on stock MPC OS, and after restarting MPC it checks the new MPC's
+`LD_PRELOAD` and warns if the library isn't there. Mods that launch MPC from their own script can replace that
+environment: MockbaMod, for instance, exports `LD_PRELOAD` from `/dev/shm/.LD_PRELOAD`, which its `AddOns/run_*.sh`
+scripts fill in. When the installer finds a MockbaMod card it also writes `AddOns/run_remote.sh`, which adds the `.so`
+to that file at every boot, and adds it there straight away; the uninstaller removes both. For another launcher like
+that, the addin has to be added to its list by hand.
 
 ### Trying it without restarting MPC
 
