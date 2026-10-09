@@ -15,6 +15,14 @@ int midi_client(void);
 // system-exclusive message (F0 .. F7). 0 on success.
 int midi_send(const uint8_t *msg, size_t n);
 
+// Ports of other clients, for the buttons. midi_find_port: the first port whose client name contains cname (NULL: any)
+// and whose name contains pname (NULL: any); user_only skips the hardware's kernel clients; label (if given) describes it.
+// midi_send_to: a note on or off (3 bytes) to that port by address, through a port nothing can subscribe to.
+// midi_watch: send what that port sends to In (on = 1), or stop (0).
+int midi_find_port(const char *cname, const char *pname, int user_only, int *client, int *port, char *label, size_t ln);
+int midi_send_to(int client, int port, const uint8_t *note3);
+int midi_watch(int client, int port, int on);
+
 struct midi_msg {
     int ms;                 // milliseconds since the listen started
     uint8_t b[3];           // the message (sysex: F0, then len holds its length and only F0 is kept)

@@ -1,5 +1,6 @@
 // Unit tests: touch mapping for each rotation, settings, query parsing, PNG framing, the JSON reader and writer,
 // screenshot regions and grids, and the ALSA sequencer event layout against the real header where it is installed.
+#include "../src/buttons.h"
 #include "../src/conf.h"
 #include "../src/image.h"
 #include "../src/json.h"
@@ -156,6 +157,20 @@ int main(void)
         CHECK(g && g[(150 * 300 + 50) * 3 + 1] > 0 && g[(150 * 300 + 51) * 3 + 1] == 0 && g[(150 * 300 + 150) * 3 + 1] > 0);
         img_grid(g, 3, 3, 0, 0, 2, 1);                                      // labels that don't fit are clipped
         free(g);
+    }
+
+    {   // button names and profile lines
+        char n[24];
+        struct button b;
+        CHECK(!buttons_norm("play", n, sizeof n) && !strcmp(n, "PLAY"));
+        CHECK(!buttons_norm("Scene 1_a", n, sizeof n) && !strcmp(n, "SCENE-1-A"));
+        CHECK(buttons_norm("", n, sizeof n) && buttons_norm("a/b", n, sizeof n) && buttons_norm("12345678901234567890123456", n, sizeof n));
+        CHECK(!buttons_parse_line("PLAY=82", &b) && !strcmp(b.name, "PLAY") && b.note == 82 && b.channel == 1);
+        CHECK(!buttons_parse_line("  play = 5 3  # a comment", &b) && !strcmp(b.name, "PLAY") && b.note == 5 && b.channel == 3);
+        CHECK(!buttons_parse_line("MENU=0", &b) && b.note == 0 && !buttons_parse_line("X=127 16", &b) && b.channel == 16);
+        CHECK(buttons_parse_line("X=128", &b) && buttons_parse_line("X=-1", &b) && buttons_parse_line("X=1 17", &b)
+              && buttons_parse_line("X=1 2 3", &b) && buttons_parse_line("novalue", &b) && buttons_parse_line("a!=1", &b)
+              && buttons_parse_line("=1", &b) && buttons_parse_line("# PLAY=1", &b) && buttons_parse_line("", &b));
     }
 
 #ifdef HAVE_ALSA_HEADER

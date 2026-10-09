@@ -41,11 +41,29 @@ static struct {
     int (*event_input)(snd_seq_t *, seq_event_t **);
     int (*poll_count)(snd_seq_t *, short);
     int (*poll_descriptors)(snd_seq_t *, struct pollfd *, unsigned int, short);
+    // Optional (the buttons need them; everything else works without): finding ports, watching one.
+    int (*client_info_malloc)(void **);
+    void (*client_info_free)(void *);
+    void (*client_info_set_client)(void *, int);
+    int (*query_next_client)(snd_seq_t *, void *);
+    int (*client_info_get_client)(const void *);
+    const char *(*client_info_get_name)(void *);
+    int (*client_info_get_type)(const void *);
+    int (*port_info_malloc)(void **);
+    void (*port_info_free)(void *);
+    void (*port_info_set_client)(void *, int);
+    void (*port_info_set_port)(void *, int);
+    int (*query_next_port)(snd_seq_t *, void *);
+    int (*port_info_get_port)(const void *);
+    const char *(*port_info_get_name)(const void *);
+    unsigned int (*port_info_get_capability)(const void *);
+    int (*connect_from)(snd_seq_t *, int, int, int);
+    int (*disconnect_from)(snd_seq_t *, int, int, int);
 } A;
 
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static snd_seq_t *seq;
-static int out_port = -1, in_port = -1, client = -1, tried;
+static int out_port = -1, in_port = -1, ctl_port = -1, client = -1, tried, have_query;
 static char err[96] = "not opened yet";
 static struct pollfd pfd[4];
 static int npfd;
@@ -62,6 +80,21 @@ static int load(void)
     *(void **)&A.event_input = dlsym(lib, "snd_seq_event_input");
     *(void **)&A.poll_count = dlsym(lib, "snd_seq_poll_descriptors_count");
     *(void **)&A.poll_descriptors = dlsym(lib, "snd_seq_poll_descriptors");
+#define OPT(f, sym) *(void **)&A.f = dlsym(lib, sym)
+    OPT(client_info_malloc, "snd_seq_client_info_malloc"); OPT(client_info_free, "snd_seq_client_info_free");
+    OPT(client_info_set_client, "snd_seq_client_info_set_client"); OPT(query_next_client, "snd_seq_query_next_client");
+    OPT(client_info_get_client, "snd_seq_client_info_get_client"); OPT(client_info_get_name, "snd_seq_client_info_get_name");
+    OPT(client_info_get_type, "snd_seq_client_info_get_type");
+    OPT(port_info_malloc, "snd_seq_port_info_malloc"); OPT(port_info_free, "snd_seq_port_info_free");
+    OPT(port_info_set_client, "snd_seq_port_info_set_client"); OPT(port_info_set_port, "snd_seq_port_info_set_port");
+    OPT(query_next_port, "snd_seq_query_next_port"); OPT(port_info_get_port, "snd_seq_port_info_get_port");
+    OPT(port_info_get_name, "snd_seq_port_info_get_name"); OPT(port_info_get_capability, "snd_seq_port_info_get_capability");
+    OPT(connect_from, "snd_seq_connect_from"); OPT(disconnect_from, "snd_seq_disconnect_from");
+#undef OPT
+    have_query = A.client_info_malloc && A.client_info_free && A.client_info_set_client && A.query_next_client
+        && A.client_info_get_client && A.client_info_get_name && A.client_info_get_type && A.port_info_malloc
+        && A.port_info_free && A.port_info_set_client && A.port_info_set_port && A.query_next_port
+        && A.port_info_get_port && A.port_info_get_name && A.port_info_get_capability && A.connect_from && A.disconnect_from;
     if (A.open && A.set_client_name && A.create_simple_port && A.client_id && A.event_output_direct && A.event_input
         && A.poll_count && A.poll_descriptors) return 0;
     dlclose(lib);   // the library stays loaded if MPC has it; only this reference goes
@@ -81,6 +114,9 @@ int midi_open(void)
             A.set_client_name(seq, "MPC Remote");
             out_port = A.create_simple_port(seq, "Out", CAP_READ | CAP_SUBS_READ, TYPE_MIDI_GENERIC | TYPE_APPLICATION);
             in_port = A.create_simple_port(seq, "In", CAP_WRITE | CAP_SUBS_WRITE, TYPE_MIDI_GENERIC | TYPE_APPLICATION);
+            // The buttons' port: it can't be subscribed to (no capabilities), so MPC never takes it for a MIDI input;
+            // it only sends, to an address.
+            ctl_port = A.create_simple_port(seq, "Control", 0, TYPE_MIDI_GENERIC | TYPE_APPLICATION);
             client = A.client_id(seq);
             int n = A.poll_count(seq, POLLIN);
             npfd = A.poll_descriptors(seq, pfd, (unsigned)(n > 4 ? 4 : n < 0 ? 0 : n), POLLIN);
@@ -231,4 +267,64 @@ int midi_listen(int ms, struct midi_msg *out, int max)
         else nanosleep(&(struct timespec){ 0, 10000000 }, NULL);
     }
     return k;
+}
+
+// Find a port by name: the first whose client name contains cname (NULL: any) and whose own name contains pname
+// (NULL: any); user_only skips kernel clients (the hardware). The first match in client, port order.
+int midi_find_port(const char *cname, const char *pname, int user_only, int *c, int *p, char *label, size_t ln)
+{
+    if (midi_open() || !have_query) return -1;
+    void *ci = NULL, *pi = NULL;
+    int found = -1;
+    pthread_mutex_lock(&mtx);
+    if (A.client_info_malloc(&ci) < 0 || A.port_info_malloc(&pi) < 0) goto done;
+    A.client_info_set_client(ci, -1);
+    while (found < 0 && A.query_next_client(seq, ci) >= 0) {
+        int cl = A.client_info_get_client(ci);
+        const char *nm = A.client_info_get_name(ci);
+        if (cl == client || (user_only && A.client_info_get_type(ci) != 1) || (cname && !strstr(nm, cname))) continue;
+        A.port_info_set_client(pi, cl);
+        A.port_info_set_port(pi, -1);
+        while (A.query_next_port(seq, pi) >= 0) {
+            const char *pn = A.port_info_get_name(pi);
+            if (pname && !strstr(pn, pname)) continue;
+            *c = cl; *p = A.port_info_get_port(pi);
+            if (label) snprintf(label, ln, "%s: %s (%d:%d)", nm, pn, *c, *p);
+            found = 0;
+            break;
+        }
+    }
+done:
+    if (ci) A.client_info_free(ci);
+    if (pi) A.port_info_free(pi);
+    pthread_mutex_unlock(&mtx);
+    return found;
+}
+
+// A note on/off to one port by address, through the unsubscribable Control port.
+int midi_send_to(int c, int p, const uint8_t *m)
+{
+    if (midi_open() || ctl_port < 0) return -1;
+    seq_event_t ev;
+    memset(&ev, 0, sizeof ev);
+    ev.type = (m[0] & 0xF0) == 0x90 ? EV_NOTEON : EV_NOTEOFF;
+    ev.data.note.channel = m[0] & 15; ev.data.note.note = m[1] & 127; ev.data.note.velocity = m[2] & 127;
+    ev.queue = QUEUE_DIRECT;
+    ev.dest.client = (unsigned char)c;
+    ev.dest.port = (unsigned char)p;
+    pthread_mutex_lock(&mtx);
+    ev.source.port = (unsigned char)ctl_port;
+    int r = A.event_output_direct(seq, &ev);
+    pthread_mutex_unlock(&mtx);
+    return r < 0 ? -1 : 0;
+}
+
+// Send what the port c:p sends to the addin's In port (on), or stop (off).
+int midi_watch(int c, int p, int on)
+{
+    if (midi_open() || !have_query) return -1;
+    pthread_mutex_lock(&mtx);
+    int r = on ? A.connect_from(seq, in_port, c, p) : A.disconnect_from(seq, in_port, c, p);
+    pthread_mutex_unlock(&mtx);
+    return r < 0 ? -1 : 0;
 }

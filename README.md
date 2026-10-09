@@ -38,6 +38,8 @@ answer defaults to no, and reinstalls keep whatever the settings file says.
 | `GET /stream[?half=1&fps=N]` | frames as `multipart/x-mixed-replace` PNGs (an unchanged screen sends nothing once its frame has gone out twice) |
 | `GET /tap?x=&y=[&hold=ms]` | touch and release (hold 10 to 4000 ms, default 90) |
 | `GET /down?x=&y=`, `/move?x=&y=`, `/up` | a drag |
+| `GET /buttons` | JSON list of the hardware buttons this device can press |
+| `GET /button?name=[&hold=ms]` | press a hardware button (down, hold 10 to 4000 ms, default 120, up) |
 | `GET /info` | JSON: screen size and pixel format, capture state, the touch device, rotations, the last frame's capture and encode times |
 
 Coordinates are screen pixels (`/info` gives the size).
@@ -64,6 +66,7 @@ Tools:
 | `get_screen_info` | the screen size, whether the display and touchscreen were found, the version |
 | `play_notes` | play notes or chords (names like `C3`, `F#2`, or numbers) with a length and velocity, through MPC's MIDI input |
 | `send_midi` | any MIDI message: CC, program change, pitch bend, pressure, transport (start/stop/continue/clock), MMC, raw SysEx |
+| `list_buttons`, `press_button`, `learn_button` | the device's hardware buttons: list them, press one (transport, views, arrows, menu ...), or teach the server a button by pressing it on the device |
 | `midi_listen` | collect what MPC sends to the addin's MIDI input port for a while |
 | `midi_status` | the addin's MIDI port and the device's MIDI clients and connections |
 | `device_status` | OS, uptime, CPU (and MPC's share), memory, temperatures, storage, network addresses |
@@ -199,10 +202,26 @@ mpc-vst-plugins checked out next to this repo (or `MPC_VST=/path`).
 
 CI (`.github/workflows`): `test.yml` runs the tests and the armhf build on every push; `release.yml` (Actions > Release, with the version) builds the zip and attaches it to a draft release, to publish once it has been tried on a device.
 
+## Hardware buttons
+
+MPC's control surface sends every button as a MIDI note on the device's own port ("... Private"). The addin sends the
+same note to MPC's own input for that port (a "Virtual RawMIDI" port, found by name), so MPC sees a press. It does this
+from a port of its own that nothing can subscribe to, so a button note never reaches a track as a note.
+
+- **Akai Force:** the buttons are built in, found by the "Akai Pro Force" MIDI client: PLAY, STOP, REC, UNDO, SAVE,
+  MENU, MATRIX, CLIP, MIXER, NOTE, KNOBS, LAUNCH, EDIT, SHIFT, COPY, MUTE, SOLO, ARM and the four arrows (measured on a
+  Force: a press is a channel-1 note on with velocity 127, a release velocity 0). The rest of the Force's buttons are
+  taught with `learn_button`.
+- **Other devices:** start with no buttons. `learn_button` waits for you to press a button on the device and records its
+  note under the name you give. Learned buttons are saved in `buttons.conf` next to the `.so` (`NAME=note [channel]`,
+  edit freely; it overrides a built-in entry of the same name), and the page and `press_button` then use them. A
+  `buttons.conf` from another device's owner is a profile: send it to be added as a built-in one.
+- Buttons that only act together with another (SHIFT, EDIT, COPY ...) do nothing pressed alone from here.
+- Real presses: PLAY plays, REC records, UNDO undoes.
+
 ## Not included
 
-Pressing the hardware buttons, pads and Q-Links (they arrive as MIDI from the control surface, not as input
-events; MCP's `play_notes` plays notes instead), audio, and any login.
+Pressing pads and Q-Links, audio, and any login.
 
 ## License
 
