@@ -29,6 +29,9 @@ const char *buttons_status(void);
 
 // Press a button (down, hold_ms, up). 0 on success, else err says why.
 int buttons_press(const char *name, int hold_ms, char *err, size_t en);
+// Hold a button down (down = 1) or let it go (0), for a page that holds it (SHIFT while tapping the screen). A button
+// held is released by itself 4 s after its last "down", so a page that goes away can't leave one stuck.
+int buttons_set(const char *name, int down, char *err, size_t en);
 // Wait up to timeout_ms for a press on the device's own buttons, and record it as name. 0 on success, else err says why.
 int buttons_learn(const char *name, int timeout_ms, int *note, int *channel, char *err, size_t en);
 

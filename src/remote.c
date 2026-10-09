@@ -388,8 +388,26 @@ static void handle(int fd)
             name[k] = 0;
         }
         if (!name[0]) { reply_text(fd, "400 Bad Request", "name is needed"); return; }
-        if (buttons_press(name, query_int(q, "hold", 120, 10, 4000), e, sizeof e)) { reply_text(fd, "409 Conflict", e); return; }
+        const char *act = q ? strstr(q, "action=") : NULL;   // press (default), down, up: a page that holds a button
+        int rc = act && !strncmp(act + 7, "down", 4) ? buttons_set(name, 1, e, sizeof e)
+               : act && !strncmp(act + 7, "up", 2) ? buttons_set(name, 0, e, sizeof e)
+               : buttons_press(name, query_int(q, "hold", 120, 10, 4000), e, sizeof e);
+        if (rc) { reply_text(fd, "409 Conflict", e); return; }
         reply_text(fd, "200 OK", "ok");
+    } else if (!strcmp(path, "/learn")) {   // waits for a press on the device, up to 30 s: the page shows a countdown
+        char name[48] = "", e[200], msg[260];
+        const char *nq = q ? strstr(q, "name=") : NULL;
+        if (nq) {
+            nq += 5;
+            size_t k = 0;
+            while (*nq && *nq != '&' && k < sizeof name - 1) name[k++] = *nq++;
+            name[k] = 0;
+        }
+        int note, ch;
+        if (!name[0]) { reply_text(fd, "400 Bad Request", "name is needed"); return; }
+        if (buttons_learn(name, query_int(q, "timeout", 15000, 1000, 30000), &note, &ch, e, sizeof e)) { reply_text(fd, "409 Conflict", e); return; }
+        snprintf(msg, sizeof msg, "Recorded %s as note %d on channel %d", name, note, ch);
+        reply_text(fd, "200 OK", msg);
     } else if (!strcmp(path, "/up")) {
         touch_up();
         reply_text(fd, "200 OK", "ok");

@@ -3,6 +3,7 @@
 #include "midi.h"
 #include <ctype.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -132,7 +133,54 @@ static int find(const struct button *t, int n, const char *norm)
 
 static void sleep_ms(int ms) { nanosleep(&(struct timespec){ ms / 1000, (long)(ms % 1000) * 1000000L }, NULL); }
 
-int buttons_press(const char *name, int hold_ms, char *err, size_t en)
+static long long now_ms(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+
+// Buttons held down by buttons_set: released by the watchdog when nobody has said "down" again for 4 s.
+#define HOLDS 8
+static struct { int on, c, p, note, ch; long long until; } held[HOLDS];
+static pthread_mutex_t hmtx = PTHREAD_MUTEX_INITIALIZER;
+static int watchdog_started;
+
+static void *watchdog(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        sleep_ms(200);
+        pthread_mutex_lock(&hmtx);
+        for (int i = 0; i < HOLDS; i++)
+            if (held[i].on && now_ms() > held[i].until) {
+                uint8_t off[3] = { (uint8_t)(0x90 | (held[i].ch - 1)), (uint8_t)held[i].note, 0 };
+                midi_send_to(held[i].c, held[i].p, off);
+                held[i].on = 0;
+            }
+        pthread_mutex_unlock(&hmtx);
+    }
+    return NULL;
+}
+
+static void start_watchdog(void)   // as the addin's other threads: every signal blocked, a small stack
+{
+    if (watchdog_started) return;
+    sigset_t all, old;
+    pthread_attr_t at;
+    pthread_t th;
+    sigfillset(&all);
+    pthread_sigmask(SIG_BLOCK, &all, &old);
+    pthread_attr_init(&at);
+    pthread_attr_setstacksize(&at, 256 * 1024);
+    pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+    if (!pthread_create(&th, &at, watchdog, NULL)) watchdog_started = 1;
+    pthread_attr_destroy(&at);
+    pthread_sigmask(SIG_SETMASK, &old, NULL);
+}
+
+// The profile entry and MPC's port for a name. 0 on success, else err says why.
+static int resolve(const char *name, struct button *out, int *c, int *p, char *err, size_t en)
 {
     char norm[24];
     struct button t[MAXB];
@@ -140,10 +188,46 @@ int buttons_press(const char *name, int hold_ms, char *err, size_t en)
     pthread_mutex_lock(&mtx);
     int n = load_locked(t, MAXB);
     pthread_mutex_unlock(&mtx);
-    int i = find(t, n, norm), c, p;
+    int i = find(t, n, norm);
     if (i < 0) { snprintf(err, en, "No button called %s. %s", norm, n ? "list_buttons shows them." : buttons_status()); return -1; }
-    if (midi_find_port(NULL, "Virtual RawMIDI", 1, &c, &p, NULL, 0)) { snprintf(err, en, "%s", buttons_status()); return -1; }
-    uint8_t on[3] = { (uint8_t)(0x90 | (t[i].channel - 1)), (uint8_t)t[i].note, 127 };
+    if (midi_find_port(NULL, "Virtual RawMIDI", 1, c, p, NULL, 0)) { snprintf(err, en, "%s", buttons_status()); return -1; }
+    *out = t[i];
+    return 0;
+}
+
+int buttons_set(const char *name, int down, char *err, size_t en)
+{
+    struct button b;
+    int c, p;
+    if (resolve(name, &b, &c, &p, err, en)) return -1;
+    uint8_t m[3] = { (uint8_t)(0x90 | (b.channel - 1)), (uint8_t)b.note, (uint8_t)(down ? 127 : 0) };
+    pthread_mutex_lock(&hmtx);
+    int slot = -1, free_slot = -1;
+    for (int i = 0; i < HOLDS; i++) {
+        if (held[i].on && held[i].note == b.note && held[i].ch == b.channel) slot = i;
+        if (!held[i].on && free_slot < 0) free_slot = i;
+    }
+    if (down && slot < 0 && free_slot < 0) { pthread_mutex_unlock(&hmtx); snprintf(err, en, "Too many buttons are held down at once."); return -1; }
+    if (down) {
+        if (slot < 0 && midi_send_to(c, p, m)) { pthread_mutex_unlock(&hmtx); snprintf(err, en, "Sending to MPC failed: %s.", midi_error()); return -1; }
+        if (slot < 0) slot = free_slot;
+        held[slot].on = 1; held[slot].c = c; held[slot].p = p; held[slot].note = b.note; held[slot].ch = b.channel;
+        held[slot].until = now_ms() + 4000;
+        start_watchdog();
+    } else {
+        if (slot >= 0) held[slot].on = 0;
+        midi_send_to(c, p, m);   // an "up" is always sent, even if the watchdog already let go
+    }
+    pthread_mutex_unlock(&hmtx);
+    return 0;
+}
+
+int buttons_press(const char *name, int hold_ms, char *err, size_t en)
+{
+    struct button b;
+    int c, p;
+    if (resolve(name, &b, &c, &p, err, en)) return -1;
+    uint8_t on[3] = { (uint8_t)(0x90 | (b.channel - 1)), (uint8_t)b.note, 127 };
     uint8_t off[3] = { on[0], on[1], 0 };   // the hardware releases with a note on of velocity 0
     if (midi_send_to(c, p, on)) { snprintf(err, en, "Sending to MPC failed: %s.", midi_error()); return -1; }
     sleep_ms(hold_ms);
