@@ -154,6 +154,16 @@ it keeps, and the drop-in shared by all addins.
 
 If `/data` isn't mounted when MPC starts, the loader prints a warning and MPC starts without the addin.
 
+### If it doesn't start
+
+Check that MPC really loaded it: `tr '\0' '\n' < /proc/$(pidof MPC)/environ | grep LD_PRELOAD` should list
+`mpc_remote_addin.so`, and `wget -qO- http://127.0.0.1:6720/info` on the device should answer. The installer adds the
+library to MPC's systemd service, which is enough on stock MPC OS. Mods that launch MPC from their own script can
+replace that environment: MockbaMod, for instance, exports `LD_PRELOAD` from `/dev/shm/.LD_PRELOAD`, which its
+`AddOns/run_*.sh` scripts fill in, so the addin has to be listed there (an installer from mpc-vst-plugins that does
+this itself is in progress). Until then, on MockbaMod add an `AddOns/run_remote.sh` that appends the `.so` to that
+file, as the other addins' scripts do.
+
 ### Trying it without restarting MPC
 
 DRM capture and touch injection work from any root process, so `build/standalone` runs the addin in a process of
