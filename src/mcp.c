@@ -699,7 +699,7 @@ static void t_send(struct args *a, struct result *r)
     if (is_note && arg_note(a, arg(a, "note"), "note", &note)) { fail(r, "%s", a->err); return; }
     if (!strcmp(type, "note_on") || !strcmp(type, "note_off")) {
         if (arg_int(a, "velocity", !strcmp(type, "note_on") ? 100 : 0, 0, 127, &v)) { fail(r, "%s", a->err); return; }
-        m[0] = (uint8_t)((type[5] == 'n' ? 0x90 : 0x80) | c); m[1] = (uint8_t)note; m[2] = (uint8_t)v; n = 3;
+        m[0] = (uint8_t)((type[6] == 'n' ? 0x90 : 0x80) | c); m[1] = (uint8_t)note; m[2] = (uint8_t)v; n = 3;
     } else if (!strcmp(type, "poly_pressure")) {
         if (arg_int(a, "value", REQUIRED, 0, 127, &v)) { fail(r, "%s", a->err); return; }
         m[0] = 0xA0 | c; m[1] = (uint8_t)note; m[2] = (uint8_t)v; n = 3;
