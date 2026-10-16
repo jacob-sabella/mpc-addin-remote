@@ -2,6 +2,7 @@
 #include "buttons.h"
 #include "midi.h"
 #include <ctype.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -11,6 +12,26 @@
 #include <unistd.h>
 
 #define MAXB 160
+static const char *const INJECT_PATHS[] = { "/dev/midi_inject", "/data/midi.in" };
+static int inject_fd = -1;
+static const char *inject_path;
+
+static int try_inject(void)
+{
+    if (inject_fd >= 0) return 0;
+    for (size_t i = 0; i < sizeof INJECT_PATHS / sizeof *INJECT_PATHS; i++) {
+        inject_fd = open(INJECT_PATHS[i], O_WRONLY | O_APPEND | O_CLOEXEC);
+        if (inject_fd >= 0) { inject_path = INJECT_PATHS[i]; return 0; }
+    }
+    return -1;
+}
+
+static int send_btn(int c, int p, const uint8_t *m)
+{
+    if (inject_fd >= 0 && c < 0)
+        return write(inject_fd, m, 3) == 3 ? 0 : -1;
+    return midi_send_to(c, p, m);
+}
 
 // The Akai Force: its buttons are MIDI notes on channel 1 (measured on a Force: press = velocity 127,
 // release = velocity 0, on the MIDI port "Akai Pro Force Private").
@@ -101,9 +122,13 @@ static int load_locked(struct button *t, int max)
         }
         fclose(f);
     }
-    if (midi_find_port(NULL, "Virtual RawMIDI", 1, &c, &p, label, sizeof label))
-        snprintf(status, sizeof status, "MPC's button input (a \"Virtual RawMIDI\" port) wasn't found: this device can't be pressed from here.");
-    else if (!n)
+    if (midi_find_port(NULL, "Virtual RawMIDI", 1, &c, &p, label, sizeof label)) {
+        if (!try_inject())
+            snprintf(status, sizeof status, "Sent to %s. %d built-in, %d learned (%s).", inject_path, builtin, n - builtin,
+                     file[0] ? file : "no profile file");
+        else
+            snprintf(status, sizeof status, "MPC's button input wasn't found (no \"Virtual RawMIDI\" port or inject device).");
+    } else if (!n)
         snprintf(status, sizeof status, "Sent to %s. No profile for this device yet: use learn_button to record each button.", label);
     else
         snprintf(status, sizeof status, "Sent to %s. %d built-in, %d learned (%s).", label, builtin, n - builtin,
@@ -155,7 +180,7 @@ static void *watchdog(void *arg)
         for (int i = 0; i < HOLDS; i++)
             if (held[i].on && now_ms() > held[i].until) {
                 uint8_t off[3] = { (uint8_t)(0x90 | (held[i].ch - 1)), (uint8_t)held[i].note, 0 };
-                midi_send_to(held[i].c, held[i].p, off);
+                send_btn(held[i].c, held[i].p, off);
                 held[i].on = 0;
             }
         pthread_mutex_unlock(&hmtx);
@@ -190,7 +215,10 @@ static int resolve(const char *name, struct button *out, int *c, int *p, char *e
     pthread_mutex_unlock(&mtx);
     int i = find(t, n, norm);
     if (i < 0) { snprintf(err, en, "No button called %s. %s", norm, n ? "list_buttons shows them." : buttons_status()); return -1; }
-    if (midi_find_port(NULL, "Virtual RawMIDI", 1, c, p, NULL, 0)) { snprintf(err, en, "%s", buttons_status()); return -1; }
+    if (midi_find_port(NULL, "Virtual RawMIDI", 1, c, p, NULL, 0)) {
+        if (try_inject()) { snprintf(err, en, "%s", buttons_status()); return -1; }
+        *c = -1; *p = -1;
+    }
     *out = t[i];
     return 0;
 }
@@ -209,14 +237,14 @@ int buttons_set(const char *name, int down, char *err, size_t en)
     }
     if (down && slot < 0 && free_slot < 0) { pthread_mutex_unlock(&hmtx); snprintf(err, en, "Too many buttons are held down at once."); return -1; }
     if (down) {
-        if (slot < 0 && midi_send_to(c, p, m)) { pthread_mutex_unlock(&hmtx); snprintf(err, en, "Sending to MPC failed: %s.", midi_error()); return -1; }
+        if (slot < 0 && send_btn(c, p, m)) { pthread_mutex_unlock(&hmtx); snprintf(err, en, "Sending to MPC failed: %s.", midi_error()); return -1; }
         if (slot < 0) slot = free_slot;
         held[slot].on = 1; held[slot].c = c; held[slot].p = p; held[slot].note = b.note; held[slot].ch = b.channel;
         held[slot].until = now_ms() + 4000;
         start_watchdog();
     } else {
         if (slot >= 0) held[slot].on = 0;
-        midi_send_to(c, p, m);   // an "up" is always sent, even if the watchdog already let go
+        send_btn(c, p, m);
     }
     pthread_mutex_unlock(&hmtx);
     return 0;
@@ -229,9 +257,9 @@ int buttons_press(const char *name, int hold_ms, char *err, size_t en)
     if (resolve(name, &b, &c, &p, err, en)) return -1;
     uint8_t on[3] = { (uint8_t)(0x90 | (b.channel - 1)), (uint8_t)b.note, 127 };
     uint8_t off[3] = { on[0], on[1], 0 };   // the hardware releases with a note on of velocity 0
-    if (midi_send_to(c, p, on)) { snprintf(err, en, "Sending to MPC failed: %s.", midi_error()); return -1; }
+    if (send_btn(c, p, on)) { snprintf(err, en, "Sending to MPC failed: %s.", midi_error()); return -1; }
     sleep_ms(hold_ms);
-    midi_send_to(c, p, off);
+    send_btn(c, p, off);
     return 0;
 }
 
