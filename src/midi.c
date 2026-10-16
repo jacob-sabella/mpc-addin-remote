@@ -301,14 +301,23 @@ done:
     return found;
 }
 
-// A note on/off to one port by address, through the unsubscribable Control port.
+// A note on/off or CC to one port by address, through the unsubscribable Control port.
 int midi_send_to(int c, int p, const uint8_t *m)
 {
     if (midi_open() || ctl_port < 0) return -1;
     seq_event_t ev;
     memset(&ev, 0, sizeof ev);
-    ev.type = (m[0] & 0xF0) == 0x90 ? EV_NOTEON : EV_NOTEOFF;
-    ev.data.note.channel = m[0] & 15; ev.data.note.note = m[1] & 127; ev.data.note.velocity = m[2] & 127;
+    switch (m[0] & 0xF0) {
+    case 0xB0:
+        ev.type = EV_CONTROLLER;
+        ev.data.control.channel = m[0] & 15;
+        ev.data.control.param = m[1] & 127u;
+        ev.data.control.value = m[2] & 127;
+        break;
+    default:
+        ev.type = (m[0] & 0xF0) == 0x90 ? EV_NOTEON : EV_NOTEOFF;
+        ev.data.note.channel = m[0] & 15; ev.data.note.note = m[1] & 127; ev.data.note.velocity = m[2] & 127;
+    }
     ev.queue = QUEUE_DIRECT;
     ev.dest.client = (unsigned char)c;
     ev.dest.port = (unsigned char)p;

@@ -34,5 +34,7 @@ int buttons_press(const char *name, int hold_ms, char *err, size_t en);
 int buttons_set(const char *name, int down, char *err, size_t en);
 // Wait up to timeout_ms for a press on the device's own buttons, and record it as name. 0 on success, else err says why.
 int buttons_learn(const char *name, int timeout_ms, int *note, int *channel, char *err, size_t en);
+// Turn the data dial by delta steps (positive = clockwise/right, negative = counter-clockwise/left). 0 on success.
+int buttons_dial(int delta, char *err, size_t en);
 
 #endif

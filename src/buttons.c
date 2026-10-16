@@ -263,6 +263,22 @@ int buttons_press(const char *name, int hold_ms, char *err, size_t en)
     return 0;
 }
 
+int buttons_dial(int delta, char *err, size_t en)
+{
+    int c, p;
+    if (midi_find_port(NULL, "Virtual RawMIDI", 1, &c, &p, NULL, 0)) {
+        if (try_inject()) { snprintf(err, en, "%s", buttons_status()); return -1; }
+        c = -1; p = -1;
+    }
+    if (delta == 0) return 0;
+    int steps = delta < 0 ? -delta : delta;
+    if (steps > 63) steps = 63;
+    uint8_t val = delta > 0 ? (uint8_t)steps : (uint8_t)(128 - steps);
+    uint8_t m[3] = { 0xB0, 0x64, val };
+    if (send_btn(c, p, m)) { snprintf(err, en, "Sending dial CC failed: %s.", midi_error()); return -1; }
+    return 0;
+}
+
 // Rewrite the profile file with name=note ch, replacing a line with the same name.
 static int save(const char *norm, int note, int ch)
 {

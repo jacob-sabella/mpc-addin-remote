@@ -394,6 +394,12 @@ static void handle(int fd)
                : buttons_press(name, query_int(q, "hold", 120, 10, 4000), e, sizeof e);
         if (rc) { reply_text(fd, "409 Conflict", e); return; }
         reply_text(fd, "200 OK", "ok");
+    } else if (!strcmp(path, "/dial")) {
+        int delta = query_int(q, "delta", 0, -63, 63);
+        if (!delta) { reply_text(fd, "400 Bad Request", "delta is needed (positive = right, negative = left)"); return; }
+        char e[200];
+        if (buttons_dial(delta, e, sizeof e)) { reply_text(fd, "409 Conflict", e); return; }
+        reply_text(fd, "200 OK", "ok");
     } else if (!strcmp(path, "/learn")) {   // waits for a press on the device, up to 30 s: the page shows a countdown
         char name[48] = "", e[200], msg[260];
         const char *nq = q ? strstr(q, "name=") : NULL;
