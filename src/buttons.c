@@ -42,6 +42,16 @@ static const struct { const char *name; int note; } FORCE[] = {
     { "LAUNCH", 116 }, { "COPY", 122 },
 };
 
+// The MPC Sample: it has no "...Private" ALSA port at all (verified 2026-10-16), so these notes only reach
+// MPC's button handling through the /dev/midi_inject path (a custom kernel module; see mpc-vst-plugins
+// docs), not through midi_send_to's ALSA sequencer route. Measured on a real Sample, channel 1.
+static const struct { const char *name; int note; } SAMPLE[] = {
+    { "MAIN", 7 }, { "BROWSE", 36 }, { "ENTER", 111 }, { "SHIFT", 49 }, { "KNOB-FX", 0 }, { "SAMPLE-EDIT", 6 },
+    { "SAMPLE-REC", 74 }, { "PLUS", 54 }, { "MINUS", 55 }, { "TAP-TEMPO", 12 }, { "OVERDUB", 80 }, { "STOP", 81 },
+    { "PLAY", 82 }, { "PLAY-START", 83 }, { "REC", 73 }, { "PAD-1", 84 }, { "PAD-2", 85 }, { "PAD-3", 86 },
+    { "PAD-4", 87 },
+};
+
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;   // the profile file and learn: one at a time
 static char file[400];
 static char status[640] = "not looked for yet";
@@ -110,6 +120,13 @@ static int load_locked(struct button *t, int max)
         for (size_t i = 0; i < sizeof FORCE / sizeof *FORCE; i++) {
             struct button b = { .note = FORCE[i].note, .channel = 1 };
             snprintf(b.name, sizeof b.name, "%s", FORCE[i].name);
+            put(t, &n, &b);
+        }
+    int sample = midi_find_port("MPC Sample", NULL, 0, &c, &p, label, sizeof label) == 0;
+    if (sample)
+        for (size_t i = 0; i < sizeof SAMPLE / sizeof *SAMPLE; i++) {
+            struct button b = { .note = SAMPLE[i].note, .channel = 1 };
+            snprintf(b.name, sizeof b.name, "%s", SAMPLE[i].name);
             put(t, &n, &b);
         }
     int builtin = n;
