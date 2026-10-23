@@ -52,6 +52,21 @@ static const struct { const char *name; int note; } SAMPLE[] = {
     { "PAD-4", 87 },
 };
 
+// The MPC Live III (measured on one, MPC OS 3.9.1): channel 1 notes for its buttons, channel 10 for the pads (the
+// standard bank A drum map), and relative controllers for the knobs (value 1 clockwise, 127 counter-clockwise). It has
+// no CLIP, SOLO or arrows; MATRIX is SHIFT + ARRANGE, LAUNCH is SET + SEQ7 and ARM is SET + SEQ10.
+static const struct { const char *name; int note, channel, cc; } LIVE3[] = {
+    { "KNOBS", 0, 1, 0 }, { "SET", 10, 1, 0 }, { "EDIT", 12, 1, 0 }, { "MIXER", 33, 1, 0 }, { "MUTE", 44, 1, 0 },
+    { "SHIFT", 49, 1, 0 }, { "SAVE", 50, 1, 0 }, { "MAIN", 52, 1, 0 }, { "UNDO", 67, 1, 0 }, { "REC", 73, 1, 0 },
+    { "OVERDUB", 80, 1, 0 }, { "STOP", 81, 1, 0 }, { "PLAY", 82, 1, 0 }, { "PLAY-START", 83, 1, 0 },
+    { "QLINK1", 84, 1, 0 }, { "QLINK2", 85, 1, 0 }, { "QLINK3", 86, 1, 0 }, { "QLINK4", 87, 1, 0 },
+    { "SEQ1", 92, 1, 0 }, { "SEQ2", 93, 1, 0 }, { "SEQ3", 94, 1, 0 }, { "SEQ4", 95, 1, 0 }, { "SEQ5", 96, 1, 0 }, { "SEQ6", 97, 1, 0 }, { "SEQ7", 98, 1, 0 }, { "SEQ8", 99, 1, 0 }, { "SEQ9", 100, 1, 0 }, { "SEQ10", 101, 1, 0 }, { "SEQ11", 102, 1, 0 }, { "SEQ12", 103, 1, 0 }, { "SEQ13", 104, 1, 0 }, { "SEQ14", 105, 1, 0 }, { "SEQ15", 106, 1, 0 }, { "SEQ16", 107, 1, 0 },
+    { "ARRANGE", 112, 1, 0 }, { "NOTE", 114, 1, 0 }, { "COPY", 122, 1, 0 }, { "MENU", 123, 1, 0 },
+    { "PAD1", 37, 10, 0 }, { "PAD2", 36, 10, 0 }, { "PAD3", 42, 10, 0 }, { "PAD4", 82, 10, 0 }, { "PAD5", 40, 10, 0 }, { "PAD6", 38, 10, 0 }, { "PAD7", 46, 10, 0 }, { "PAD8", 44, 10, 0 }, { "PAD9", 48, 10, 0 }, { "PAD10", 47, 10, 0 }, { "PAD11", 45, 10, 0 }, { "PAD12", 43, 10, 0 }, { "PAD13", 49, 10, 0 }, { "PAD14", 55, 10, 0 }, { "PAD15", 51, 10, 0 }, { "PAD16", 53, 10, 0 },
+    { "QLINK1-TURN", 16, 1, 1 }, { "QLINK2-TURN", 17, 1, 1 }, { "QLINK3-TURN", 18, 1, 1 }, { "QLINK4-TURN", 19, 1, 1 },
+    { "WHEEL", 100, 1, 1 },
+};
+
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;   // the profile file and learn: one at a time
 static char file[400];
 static char status[640] = "not looked for yet";
@@ -131,6 +146,12 @@ static int load_locked(struct button *t, int max)
         for (size_t i = 0; i < sizeof SAMPLE / sizeof *SAMPLE; i++) {
             struct button b = { .note = SAMPLE[i].note, .channel = 1 };
             snprintf(b.name, sizeof b.name, "%s", SAMPLE[i].name);
+            put(t, &n, &b);
+        }
+    if (!force && !sample && midi_find_port("MPC LIVE III", NULL, 0, &c, &p, NULL, 0) == 0)
+        for (size_t i = 0; i < sizeof LIVE3 / sizeof *LIVE3; i++) {
+            struct button b = { .note = LIVE3[i].note, .channel = LIVE3[i].channel, .cc = LIVE3[i].cc };
+            snprintf(b.name, sizeof b.name, "%s", LIVE3[i].name);
             put(t, &n, &b);
         }
     int builtin = n;
@@ -386,18 +407,21 @@ out:
     return rc;
 }
 
-// The Force table's name for a note on channel 1 ("" for none): to see how far another device's buttons match it.
-static const char *force_name(int note, int ch)
+// The profile's name for a note (kind 8 or 9) or a controller (kind 0xB) on a channel, "" for none.
+static const char *profile_name(const struct button *t, int n, int kind, int num, int ch)
 {
-    if (ch == 1)
-        for (size_t i = 0; i < sizeof FORCE / sizeof *FORCE; i++)
-            if (FORCE[i].note == note) return FORCE[i].name;
+    for (int i = 0; i < n; i++)
+        if (t[i].note == num && t[i].channel == ch && t[i].cc == (kind == 0xB)) return t[i].name;
     return "";
 }
 
 int buttons_listen(int ms, struct button_event *out, int max, char *err, size_t en)
 {
     if (!surface_active()) { snprintf(err, en, "MPC hasn't opened its button input through the addin, so there is nothing to listen to."); return -1; }
+    struct button prof[MAXB];
+    pthread_mutex_lock(&mtx);
+    int np = load_locked(prof, MAXB);
+    pthread_mutex_unlock(&mtx);
     unsigned long pos = surface_tap_pos();
     int n = 0;
     for (int left = ms; left > 0; ) {
@@ -408,7 +432,8 @@ int buttons_listen(int ms, struct button_event *out, int max, char *err, size_t 
         out[n].kind = m[0] >> 4;   // 8 note off, 9 note on, 0xB controller, 0xE pitch bend ...
         out[n].on = out[n].kind == 9 && m[2] > 0;
         out[n].note = m[1]; out[n].channel = (m[0] & 15) + 1; out[n].velocity = m[2];
-        snprintf(out[n].match, sizeof out[n].match, "%s", out[n].kind == 8 || out[n].kind == 9 ? force_name(m[1], out[n].channel) : "");
+        snprintf(out[n].match, sizeof out[n].match, "%s",
+                 out[n].kind == 8 || out[n].kind == 9 || out[n].kind == 0xB ? profile_name(prof, np, out[n].kind, m[1], out[n].channel) : "");
         n++;
     }
     return n;

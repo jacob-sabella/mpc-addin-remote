@@ -731,14 +731,15 @@ static void t_button_listen(struct args *a, struct result *r)
     n = buttons_listen(ms, ev, 96, e, sizeof e);
     if (n < 0) { fail(r, "%s", e); return; }
     if (!n) { add_text(r, "No button was pressed in %d ms.", ms); return; }
-    add_text(r, "%d message(s) from the device's controls in %d ms (channel, data, the Force table's name for a note when it matches):", n, ms);
+    add_text(r, "%d message(s) from the device's controls in %d ms (channel, data, the profile's name for it when it has one):", n, ms);
     for (int i = 0; i < n; i++) {
         static const char *const kinds[] = { "", "", "", "", "", "", "", "", "note off", "note on", "poly pressure", "cc", "program", "pressure", "bend" };
         if (ev[i].kind == 8 || ev[i].kind == 9)
             add_text(r, "ch%d note %3d %s vel %3d%s%s", ev[i].channel, ev[i].note, ev[i].on ? "down" : "up  ", ev[i].velocity,
                      ev[i].match[0] ? "  = " : "", ev[i].match);
         else
-            add_text(r, "ch%d %s %3d value %3d", ev[i].channel, ev[i].kind < 15 ? kinds[ev[i].kind] : "?", ev[i].note, ev[i].velocity);
+            add_text(r, "ch%d %s %3d value %3d%s%s", ev[i].channel, ev[i].kind < 15 ? kinds[ev[i].kind] : "?", ev[i].note,
+                     ev[i].velocity, ev[i].match[0] ? "  = " : "", ev[i].match);
     }
 }
 

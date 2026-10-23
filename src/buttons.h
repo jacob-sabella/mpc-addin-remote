@@ -42,7 +42,7 @@ int buttons_learn(const char *name, int timeout_ms, int *note, int *channel, cha
 int buttons_dial(int delta, char *err, size_t en);
 
 
-// One channel message heard on the device's own buttons (a note, a controller, a bend ...): the Force table's name for it when it has one ("" otherwise).
+// One channel message heard on the device's own buttons (a note, a controller, a bend ...): the profile's name for it when it has one ("" otherwise).
 struct button_event { int kind, note, channel, velocity, on; char match[24]; };   // note = first data byte, velocity = second
 // Collect the channel messages the device's controls send MPC for ms (button presses and releases, knobs, wheel). Returns the count, -1 with err when
 // MPC's button input isn't hooked by the addin.
