@@ -85,8 +85,12 @@ int buttons_parse_line(const char *line, struct button *b)
     memcpy(nm, line, l);
     nm[l] = 0;
     char *end;
-    long note = strtol(eq + 1, &end, 10);
-    if (end == eq + 1 || note < 0 || note > 127) return -1;
+    const char *v = eq + 1;
+    while (isspace((unsigned char)*v)) v++;
+    int cc = (v[0] == 'c' || v[0] == 'C') && (v[1] == 'c' || v[1] == 'C');
+    if (cc) v += 2;
+    long note = strtol(v, &end, 10);
+    if (end == v || note < 0 || note > 127) return -1;
     long ch = 1;
     while (isspace((unsigned char)*end)) end++;
     if (*end && *end != '#') {
@@ -99,7 +103,7 @@ int buttons_parse_line(const char *line, struct button *b)
     }
     memset(b, 0, sizeof *b);
     if (buttons_norm(nm, b->name, sizeof b->name)) return -1;
-    b->note = (int)note; b->channel = (int)ch; b->learned = 1;
+    b->note = (int)note; b->channel = (int)ch; b->learned = 1; b->cc = cc;
     return 0;
 }
 
@@ -245,6 +249,7 @@ int buttons_set(const char *name, int down, char *err, size_t en)
     struct button b;
     int c, p;
     if (resolve(name, &b, &c, &p, err, en)) return -1;
+    if (b.cc) { snprintf(err, en, "%s is a knob: turn it with turn_knob.", b.name); return -1; }
     uint8_t m[3] = { (uint8_t)(0x90 | (b.channel - 1)), (uint8_t)b.note, (uint8_t)(down ? 127 : 0) };
     pthread_mutex_lock(&hmtx);
     int slot = -1, free_slot = -1;
@@ -272,6 +277,7 @@ int buttons_press(const char *name, int hold_ms, char *err, size_t en)
     struct button b;
     int c, p;
     if (resolve(name, &b, &c, &p, err, en)) return -1;
+    if (b.cc) { snprintf(err, en, "%s is a knob: turn it with turn_knob.", b.name); return -1; }
     uint8_t on[3] = { (uint8_t)(0x90 | (b.channel - 1)), (uint8_t)b.note, 127 };
     uint8_t off[3] = { on[0], on[1], 0 };   // the hardware releases with a note on of velocity 0
     if (send_btn(c, p, on)) { snprintf(err, en, "Sending to MPC failed: %s.", midi_error()); return -1; }
@@ -293,6 +299,21 @@ int buttons_dial(int delta, char *err, size_t en)
     uint8_t val = delta > 0 ? (uint8_t)steps : (uint8_t)(128 - steps);
     uint8_t m[3] = { 0xB0, 0x64, val };
     if (send_btn(c, p, m)) { snprintf(err, en, "Sending dial CC failed: %s.", midi_error()); return -1; }
+    return 0;
+}
+
+int buttons_turn(const char *name, int steps, char *err, size_t en)
+{
+    struct button b;
+    int c, p;
+    if (!steps || steps > 64 || steps < -64) { snprintf(err, en, "steps is 1 to 64 clockwise, or -1 to -64 counter-clockwise."); return -1; }
+    if (resolve(name, &b, &c, &p, err, en)) return -1;
+    if (!b.cc) { snprintf(err, en, "%s is a button, not a knob: use press_button.", b.name); return -1; }
+    uint8_t m[3] = { (uint8_t)(0xB0 | (b.channel - 1)), (uint8_t)b.note, (uint8_t)(steps > 0 ? 1 : 127) };
+    for (int i = 0, n = steps > 0 ? steps : -steps; i < n; i++) {
+        if (send_note(c, p, m)) { snprintf(err, en, "Sending to MPC failed: %s.", c < 0 ? "its button input is busy or closed" : midi_error()); return -1; }
+        sleep_ms(8);   // the hardware's own clicks are spaced like this; the input queue holds 64
+    }
     return 0;
 }
 
@@ -324,33 +345,71 @@ static int save(const char *norm, int note, int ch)
 int buttons_learn(const char *name, int timeout_ms, int *note, int *channel, char *err, size_t en)
 {
     char norm[24];
-    int sc, sp;
+    int sc = 0, sp = 0;
     if (buttons_norm(name, norm, sizeof norm)) { snprintf(err, en, "\"%s\" isn't a button name (letters, digits, - only).", name); return -1; }
     if (!file[0]) { snprintf(err, en, "There is nowhere to save a profile (no folder for buttons.conf)."); return -1; }
-    if (midi_find_port(NULL, "Private", 0, &sc, &sp, NULL, 0)) {
+    int tapped = surface_active();   // MPC holds the port exclusively: listen from inside its reads instead
+    if (!tapped && midi_find_port(NULL, "Private", 0, &sc, &sp, NULL, 0)) {
         snprintf(err, en, "The device's own button port (\"... Private\") wasn't found, so there is nothing to learn from.");
         return -1;
     }
     pthread_mutex_lock(&mtx);
-    int rc = -1;
-    if (midi_watch(sc, sp, 1)) { snprintf(err, en, "Couldn't listen to the device's buttons: %s.", midi_error()); goto out; }
-    midi_drain();
-    struct midi_msg m[64];
-    int left = timeout_ms, got = 0;
-    while (left > 0 && !got) {
-        int slice = left < 250 ? left : 250, k = midi_listen(slice, m, 64);
-        left -= slice;
-        for (int i = 0; i < k; i++)
-            if ((m[i].b[0] & 0xF0) == 0x90 && m[i].b[2] > 0 && m[i].len == 3) {
-                *note = m[i].b[1]; *channel = (m[i].b[0] & 15) + 1; got = 1;
-                break;
-            }
+    int rc = -1, got = 0, left = timeout_ms;
+    if (tapped) {
+        unsigned long pos = surface_tap_pos();
+        while (left > 0 && !got) {
+            uint8_t m[3];
+            int k = surface_tap_next(&pos, m);
+            if (k > 0 && (m[0] & 0xF0) == 0x90 && m[2] > 0) { *note = m[1]; *channel = (m[0] & 15) + 1; got = 1; }
+            else if (k == 0) { sleep_ms(10); left -= 10; }
+        }
+    } else {
+        if (midi_watch(sc, sp, 1)) { snprintf(err, en, "Couldn't listen to the device's buttons: %s.", midi_error()); goto out; }
+        midi_drain();
+        struct midi_msg m[64];
+        while (left > 0 && !got) {
+            int slice = left < 250 ? left : 250, k = midi_listen(slice, m, 64);
+            left -= slice;
+            for (int i = 0; i < k; i++)
+                if ((m[i].b[0] & 0xF0) == 0x90 && m[i].b[2] > 0 && m[i].len == 3) {
+                    *note = m[i].b[1]; *channel = (m[i].b[0] & 15) + 1; got = 1;
+                    break;
+                }
+        }
+        midi_watch(sc, sp, 0);
     }
-    midi_watch(sc, sp, 0);
     if (!got) { snprintf(err, en, "No button was pressed in %d ms.", timeout_ms); goto out; }
     if (save(norm, *note, *channel)) { snprintf(err, en, "Heard note %d but couldn't write %s.", *note, file); goto out; }
     rc = 0;
 out:
     pthread_mutex_unlock(&mtx);
     return rc;
+}
+
+// The Force table's name for a note on channel 1 ("" for none): to see how far another device's buttons match it.
+static const char *force_name(int note, int ch)
+{
+    if (ch == 1)
+        for (size_t i = 0; i < sizeof FORCE / sizeof *FORCE; i++)
+            if (FORCE[i].note == note) return FORCE[i].name;
+    return "";
+}
+
+int buttons_listen(int ms, struct button_event *out, int max, char *err, size_t en)
+{
+    if (!surface_active()) { snprintf(err, en, "MPC hasn't opened its button input through the addin, so there is nothing to listen to."); return -1; }
+    unsigned long pos = surface_tap_pos();
+    int n = 0;
+    for (int left = ms; left > 0; ) {
+        uint8_t m[3];
+        int k = surface_tap_next(&pos, m);
+        if (k == 0) { sleep_ms(10); left -= 10; continue; }
+        if (k < 0 || n >= max) continue;
+        out[n].kind = m[0] >> 4;   // 8 note off, 9 note on, 0xB controller, 0xE pitch bend ...
+        out[n].on = out[n].kind == 9 && m[2] > 0;
+        out[n].note = m[1]; out[n].channel = (m[0] & 15) + 1; out[n].velocity = m[2];
+        snprintf(out[n].match, sizeof out[n].match, "%s", out[n].kind == 8 || out[n].kind == 9 ? force_name(m[1], out[n].channel) : "");
+        n++;
+    }
+    return n;
 }

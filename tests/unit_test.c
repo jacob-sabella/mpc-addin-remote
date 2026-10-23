@@ -171,6 +171,10 @@ int main(void)
         CHECK(buttons_parse_line("X=128", &b) && buttons_parse_line("X=-1", &b) && buttons_parse_line("X=1 17", &b)
               && buttons_parse_line("X=1 2 3", &b) && buttons_parse_line("novalue", &b) && buttons_parse_line("a!=1", &b)
               && buttons_parse_line("=1", &b) && buttons_parse_line("# PLAY=1", &b) && buttons_parse_line("", &b));
+        CHECK(!buttons_parse_line("WHEEL=cc100", &b) && b.cc && b.note == 100 && b.channel == 1);
+        CHECK(!buttons_parse_line("q1 = CC 16 3 # a knob", &b) && b.cc && b.note == 16 && b.channel == 3 && !strcmp(b.name, "Q1"));
+        CHECK(!buttons_parse_line("PLAY=82", &b) && !b.cc);
+        CHECK(buttons_parse_line("X=cc", &b) && buttons_parse_line("X=cc128", &b) && buttons_parse_line("X=c5", &b));
     }
 
 #ifdef HAVE_ALSA_HEADER

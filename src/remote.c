@@ -371,14 +371,30 @@ static void handle(int fd)
             gesture_unlock();
         }
         reply_text(fd, "200 OK", "ok");
-    } else if (!strcmp(path, "/buttons")) {
+    } else if (!strcmp(path, "/buttons") || !strcmp(path, "/knobs")) {   // names: the buttons, or the knobs (NAME=ccN)
         struct button b[160];
-        int n = buttons_list(b, 160);
+        int n = buttons_list(b, 160), knobs = path[1] == 'k', first = 1;
         char out[160 * 48 + 256], *o = out;
         o += snprintf(o, sizeof out, "[");
-        for (int i = 0; i < n; i++) o += snprintf(o, sizeof out - (size_t)(o - out), "%s\"%s\"", i ? "," : "", b[i].name);
+        for (int i = 0; i < n; i++) {
+            if (!!b[i].cc != knobs) continue;
+            o += snprintf(o, sizeof out - (size_t)(o - out), "%s\"%s\"", first ? "" : ",", b[i].name);
+            first = 0;
+        }
         snprintf(o, sizeof out - (size_t)(o - out), "]");
         reply(fd, "200 OK", "application/json", out, strlen(out));
+    } else if (!strcmp(path, "/turn")) {   // a knob: name=WHEEL&steps=-3
+        char name[48] = "", e[200];
+        const char *nq = q ? strstr(q, "name=") : NULL;
+        if (nq) {
+            nq += 5;
+            size_t k = 0;
+            while (*nq && *nq != '&' && k < sizeof name - 1) name[k++] = *nq++;
+            name[k] = 0;
+        }
+        if (!name[0]) { reply_text(fd, "400 Bad Request", "name is needed"); return; }
+        if (buttons_turn(name, query_int(q, "steps", 1, -64, 64), e, sizeof e)) { reply_text(fd, "409 Conflict", e); return; }
+        reply_text(fd, "200 OK", "ok");
     } else if (!strcmp(path, "/button")) {
         char name[48] = "", e[200];
         const char *nq = q ? strstr(q, "name=") : NULL;
