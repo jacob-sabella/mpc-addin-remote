@@ -152,7 +152,7 @@ sh /data/mpc-addins/remote/uninstall.sh   # later, to remove it
 It installs into `/data/mpc-addins/remote/` (the root file system is often nearly full) and **adds** the `.so` to
 `LD_PRELOAD` in MPC's systemd service (`acvs`, or `inmusic-mpc`); other addins already in it stay. Reinstalling keeps
 your settings file; uninstalling takes only this addin out of the list. The scripts are the shared addin
-installer from [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins) (`tools/release/addin`; identical in every
+installer from [mpc-vst-plugins](https://github.com/open-mpc/mpc-vst-plugins) (`tools/release/addin`; identical in every
 addin, `addin.manifest` describes this one). Its `docs/ADDINS.md` has the rules: why it edits the line that takes effect rather than adding a second `LD_PRELOAD=`, the backup
 it keeps, and the drop-in shared by all addins.
 
