@@ -208,10 +208,18 @@ MPC's control surface sends every button as a MIDI note on the device's own port
 same note to MPC's own input for that port (a "Virtual RawMIDI" port, found by name), so MPC sees a press. It does this
 from a port of its own that nothing can subscribe to, so a button note never reaches a track as a note.
 
+A device with neither a "...Private" port nor a "Virtual RawMIDI" port (the Sample) falls back to writing the raw
+3-byte MIDI message to `/dev/midi_inject` or `/data/midi.in` if either exists — on the Sample this device node comes
+from a separate, custom kernel module, not anything stock.
+
 - **Akai Force:** the buttons are built in, found by the "Akai Pro Force" MIDI client: PLAY, STOP, REC, UNDO, SAVE,
   MENU, MATRIX, CLIP, MIXER, NOTE, KNOBS, LAUNCH, EDIT, SHIFT, COPY, MUTE, SOLO, ARM and the four arrows (measured on a
   Force: a press is a channel-1 note on with velocity 127, a release velocity 0). The rest of the Force's buttons are
   taught with `learn_button`.
+- **MPC Sample:** also built in, found by the "MPC Sample" MIDI client: MAIN, BROWSE, ENTER, SHIFT, KNOB-FX,
+  SAMPLE-EDIT, SAMPLE-REC, PLUS, MINUS, TAP-TEMPO, OVERDUB, STOP, PLAY, PLAY-START, REC, PAD-1 through PAD-4 (measured
+  2026-10-16, channel 1). The Sample has no "...Private" port at all, so these notes only reach MPC's button handling
+  through `/dev/midi_inject` (see below), not the normal ALSA-sequencer route the rest of this section describes.
 - **Other devices:** start with no buttons. `learn_button` waits for you to press a button on the device and records its
   note under the name you give. Learned buttons are saved in `buttons.conf` next to the `.so` (`NAME=note [channel]`,
   edit freely; it overrides a built-in entry of the same name), and the page and `press_button` then use them. A
