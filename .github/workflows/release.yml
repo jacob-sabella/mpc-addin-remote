@@ -17,12 +17,12 @@ on:
 
 jobs:
   addin:
-    uses: open-mpc/mpc-vst-plugins/.github/workflows/addin-release.yml@8e266cec8abd3d780e331404209c3e8b8f699c5c
+    uses: open-mpc/mpc-vst-plugins/.github/workflows/addin-release.yml@a0dda4f8ea34aa3b5f13468b570bcbaf39dbd362
     permissions: { contents: write }
     with:
       tag: remote-addin-v${{ inputs.version }}
       version: ${{ inputs.version }}
-      tools_ref: 8e266cec8abd3d780e331404209c3e8b8f699c5c
+      tools_ref: a0dda4f8ea34aa3b5f13468b570bcbaf39dbd362
       package_dir: build
       build: ./build.sh
       host_test: sudo sysctl -q vm.mmap_rnd_bits=28 && python3 -m pip install --quiet mcp && tests/test.sh
