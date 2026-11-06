@@ -25,6 +25,8 @@ jobs:
       tools_ref: a0dda4f8ea34aa3b5f13468b570bcbaf39dbd362
       package_dir: build
       build: ./build.sh
+      package_dir_aarch64: build/aarch64
+      build_aarch64: ./build_aarch64.sh
       host_test: sudo sysctl -q vm.mmap_rnd_bits=28 && python3 -m pip install --quiet mcp && tests/test.sh
       about: "The MPC screen in a browser, and an MCP server so an AI model can see and touch it, play MIDI and read files."
       license: MIT

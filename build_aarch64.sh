@@ -17,5 +17,5 @@ docker run --rm --platform linux/arm64 -u "$(id -u):$(id -g)" -v "$PWD":/b -w /b
   echo "highest glibc symbol version: $max"
   readelf -d build/aarch64/mpc_remote_addin.so | grep NEEDED
 '
-cp -f mpc_remote_addin.conf build/aarch64/
+cp -f mpc_remote_addin.conf addin.manifest build/aarch64/   # the release packages build/aarch64 with the installer
 ls -l build/aarch64/mpc_remote_addin.so build/aarch64/standalone
