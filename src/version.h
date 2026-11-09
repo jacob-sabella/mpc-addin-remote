@@ -1,2 +1,2 @@
 // The addin version, in /info and the MCP handshake.
-#define REMOTE_VERSION "1.2.0"
+#define REMOTE_VERSION "1.3.0"
