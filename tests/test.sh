@@ -35,6 +35,13 @@ sleep 0.5
 if check_port; then echo "FAIL the addin started in a process not named MPC"; kill $P; exit 1; fi
 kill $P; wait $P 2>/dev/null || true
 echo "ok   preload: stays out of other processes"
+cp "$B/MPC" "$B/MPC Sample"
+MPC_REMOTE_ADDIN_CONF="$B/smoke.conf" LD_PRELOAD="$PWD/$B/mpc_remote_addin.so" "$B/MPC Sample" 2>/dev/null & P=$!
+for _ in $(seq 50); do check_port && break; sleep 0.1; done
+if ! check_port; then echo "FAIL the addin did not start in the MPC Sample's process (MPC Sample)"; kill $P; exit 1; fi
+kill $P; wait $P 2>/dev/null || true
+for _ in $(seq 50); do check_port || break; sleep 0.1; done
+echo "ok   preload: starts in the MPC Sample's process (MPC Sample)"
 MPC_REMOTE_ADDIN_CONF="$B/smoke.conf" LD_PRELOAD="$PWD/$B/mpc_remote_addin.so" "$B/MPC" 2>"$B/smoke.log" & P=$!
 for _ in $(seq 50); do check_port && break; sleep 0.1; done
 INFO=$(curl -s "http://127.0.0.1:$PORT/info")

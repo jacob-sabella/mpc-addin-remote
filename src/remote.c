@@ -65,7 +65,8 @@ static int is_mpc_process(void)
     if (n <= 0) return 0;
     exe[n] = 0;
     const char *base = strrchr(exe, '/');
-    return !strcmp(base ? base + 1 : exe, "MPC");
+    base = base ? base + 1 : exe;
+    return !strcmp(base, "MPC") || !strcmp(base, "MPC Sample");   // the MPC Sample's binary is /usr/bin/MPC Sample
 }
 
 // ---- HTTP ----
