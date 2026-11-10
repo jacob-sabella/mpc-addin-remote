@@ -673,10 +673,17 @@ static void t_list_buttons(struct result *r)
     struct button b[160];
     int n = buttons_list(b, 160);
     struct sb o = { 0 };
-    sb_printf(&o, "%d button%s. %s\n", n, n == 1 ? "" : "s", buttons_status());
-    for (int i = 0; i < n; i++)
-        sb_printf(&o, "%s%s", i ? ", " : "", b[i].name);
-    if (n) sb_puts(&o, "\nPress one with press_button. A button a profile lacks can be recorded with learn_button.");
+    int knobs = 0;
+    for (int i = 0; i < n; i++) knobs += b[i].cc;
+    sb_printf(&o, "%d button%s. %s\n", n - knobs, n - knobs == 1 ? "" : "s", buttons_status());
+    for (int i = 0, k = 0; i < n; i++)
+        if (!b[i].cc) sb_printf(&o, "%s%s", k++ ? ", " : "", b[i].name);
+    if (n - knobs) sb_puts(&o, "\nPress one with press_button. A button a profile lacks can be recorded with learn_button.");
+    if (knobs) {
+        sb_puts(&o, "\nKnobs (turn with turn_knob): ");
+        for (int i = 0, k = 0; i < n; i++)
+            if (b[i].cc) sb_printf(&o, "%s%s", k++ ? ", " : "", b[i].name);
+    }
     add_sb_text(r, &o);
     sb_free(&o);
 }
@@ -703,6 +710,37 @@ static void t_learn_button(struct args *a, struct result *r)
     if (arg_str(a, "name", 1, NULL, name, sizeof name) || arg_int(a, "timeout_ms", 10000, 1000, 30000, &ms)) { fail(r, "%s", a->err); return; }
     if (buttons_learn(name, ms, &note, &ch, e, sizeof e)) { fail(r, "%s", e); return; }
     add_text(r, "Recorded %s as note %d on channel %d. Whoever pressed the button on the device also pressed it for MPC.", name, note, ch);
+}
+
+static void t_turn_knob(struct args *a, struct result *r)
+{
+    char name[48], e[200];
+    int steps;
+    if (arg_str(a, "name", 1, NULL, name, sizeof name) || arg_int(a, "steps", 1, -64, 64, &steps)) { fail(r, "%s", a->err); return; }
+    if (buttons_turn(name, steps, e, sizeof e)) { fail(r, "%s", e); return; }
+    add_text(r, "Turned %s %d step%s %s.", name, steps < 0 ? -steps : steps, steps == 1 || steps == -1 ? "" : "s",
+             steps > 0 ? "clockwise" : "counter-clockwise");
+}
+
+static void t_button_listen(struct args *a, struct result *r)
+{
+    int ms, n;
+    char e[200];
+    struct button_event ev[96];
+    if (arg_int(a, "duration_ms", 10000, 1000, 30000, &ms)) { fail(r, "%s", a->err); return; }
+    n = buttons_listen(ms, ev, 96, e, sizeof e);
+    if (n < 0) { fail(r, "%s", e); return; }
+    if (!n) { add_text(r, "No button was pressed in %d ms.", ms); return; }
+    add_text(r, "%d message(s) from the device's controls in %d ms (channel, data, the profile's name for it when it has one):", n, ms);
+    for (int i = 0; i < n; i++) {
+        static const char *const kinds[] = { "", "", "", "", "", "", "", "", "note off", "note on", "poly pressure", "cc", "program", "pressure", "bend" };
+        if (ev[i].kind == 8 || ev[i].kind == 9)
+            add_text(r, "ch%d note %3d %s vel %3d%s%s", ev[i].channel, ev[i].note, ev[i].on ? "down" : "up  ", ev[i].velocity,
+                     ev[i].match[0] ? "  = " : "", ev[i].match);
+        else
+            add_text(r, "ch%d %s %3d value %3d%s%s", ev[i].channel, ev[i].kind < 15 ? kinds[ev[i].kind] : "?", ev[i].note,
+                     ev[i].velocity, ev[i].match[0] ? "  = " : "", ev[i].match);
+    }
 }
 
 static int hexbytes(const char *s, uint8_t *out, int max)
@@ -921,6 +959,8 @@ static void call_tool(struct sb *o, const char *s, const struct jtok *t, int id,
     else if (!strcmp(name, "list_buttons")) t_list_buttons(&r);
     else if (!strcmp(name, "press_button")) t_press_button(&a, &r);
     else if (!strcmp(name, "learn_button")) t_learn_button(&a, &r);
+    else if (!strcmp(name, "button_listen")) t_button_listen(&a, &r);
+    else if (!strcmp(name, "turn_knob")) t_turn_knob(&a, &r);
     else if (!strcmp(name, "midi_listen")) t_listen(&a, &r);
     else if (!strcmp(name, "midi_status")) t_midi_status(&r);
     else if (!strcmp(name, "device_status")) t_status(&r);

@@ -152,7 +152,7 @@ TOOLS = [
      obj({})),
     ("list_buttons", "List hardware buttons", True,
      "The device's hardware buttons this server can press (PLAY, STOP, MIXER, the arrows ...), and where the presses "
-     "go. The Akai Force has a built-in list; any device can be taught with learn_button.",
+     "go. The Akai Force and MPC Live III have built-in lists; any device can be taught with learn_button.",
      obj({})),
     ("press_button", "Press a hardware button", False,
      "Press one of the device's hardware buttons, as if with a finger on it: transport (PLAY, STOP, REC), views "
@@ -171,6 +171,20 @@ TOOLS = [
      obj({"name": {"type": "string", "description": "The name to give it, letters, digits and - (for example PLAY)."},
           "timeout_ms": {"type": "integer", "minimum": 1000, "maximum": 30000, "default": 10000,
                          "description": "How long to wait for the press."}}, ("name",))),
+    ("turn_knob", "Turn a hardware knob", False,
+     "Turn one of the device's knobs or wheel (a profile entry NAME=ccN, for example the data wheel or a Q-Link): "
+     "steps clicks of its relative encoder, clockwise for a positive number, counter-clockwise for a negative one. "
+     "list_buttons names the knobs. A real turn: it changes whatever the knob is on.",
+     obj({"name": {"type": "string", "description": "The knob, for example WHEEL (case doesn't matter)."},
+          "steps": {"type": "integer", "minimum": -64, "maximum": 64, "default": 1,
+                    "description": "How many clicks, negative for counter-clockwise."}}, ("name",))),
+    ("button_listen", "Listen to the hardware buttons", True,
+     "List what the device's own controls send MPC for a while: press buttons, turn knobs or the wheel meanwhile. Each "
+     "note press and release shows its channel and note, and the profile's name for it when it has one, to "
+     "work out a new device's profile; controllers show their number and value. The presses also reach MPC as usual. Needs the addin's button hook "
+     "(list_buttons says whether it is on).",
+     obj({"duration_ms": {"type": "integer", "minimum": 1000, "maximum": 30000, "default": 10000,
+                          "description": "How long to listen."}})),
     ("device_status", "Device status", True,
      "The device now: OS and kernel, uptime, load and CPU use (all cores and MPC's own), memory, temperatures, free "
      "space on each storage, and network addresses.",

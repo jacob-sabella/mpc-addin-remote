@@ -7,13 +7,19 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 B=build/host
 mkdir -p "$B"
-SRC="src/remote.c src/capture.c src/png.c src/touch.c src/conf.c src/json.c src/image.c src/mcp.c src/midi.c src/device.c src/buttons.c"
+SRC="src/remote.c src/capture.c src/png.c src/touch.c src/conf.c src/json.c src/image.c src/mcp.c src/midi.c src/device.c src/buttons.c src/surface.c"
 W="-std=gnu11 -O1 -g -Wall -Wextra -Werror -DREMOTE_TEST -fno-omit-frame-pointer"
 
 python3 tools/gen_mcp_tools.py --check
 cc $W -fsanitize=address,undefined -fno-sanitize-recover=all -o "$B/unit" tests/unit_test.c src/conf.c src/png.c src/touch.c \
-  src/json.c src/image.c src/buttons.c src/midi.c -ldl -lpthread
+  src/json.c src/image.c src/buttons.c src/surface.c src/midi.c -ldl -lpthread
 "$B/unit"
+cc $W -fPIC -shared -o "$B/libfake_asound.so" tests/fake_asound.c
+cc $W -fsanitize=address,undefined -fno-sanitize-recover=all -o "$B/surface" tests/surface_test.c src/surface.c \
+  -L"$B" -Wl,-rpath,"$PWD/$B" -lfake_asound -ldl -lpthread
+"$B/surface"
+cc $W -fsanitize=thread -o "$B/surface_tsan" tests/surface_test.c src/surface.c -L"$B" -Wl,-rpath,"$PWD/$B" -lfake_asound -ldl -lpthread
+"$B/surface_tsan"
 
 cc $W -fsanitize=address,undefined -fno-sanitize-recover=all -o "$B/host_asan" tests/host_main.c $SRC -ldl -lpthread
 python3 tests/test_remote.py "$B/host_asan"
@@ -53,7 +59,7 @@ if check_port; then echo "FAIL MPC_REMOTE_ADDIN_DISABLE ignored"; kill $P; exit 
 kill $P; wait $P 2>/dev/null || true
 echo "ok   preload: MPC_REMOTE_ADDIN_DISABLE keeps it off"
 EXPORTS=$(nm -D --defined-only "$B/mpc_remote_addin.so" | awk '$2 == "T" {print $3}' | tr '\n' ' ')
-[ "$EXPORTS" = "mpc_remote_addin_start " ] || { echo "FAIL exports: $EXPORTS"; exit 1; }
-echo "ok   exports only mpc_remote_addin_start"
+[ "$EXPORTS" = "__poll_chk mpc_remote_addin_start poll snd_rawmidi_close snd_rawmidi_open snd_rawmidi_read " ] || { echo "FAIL exports: $EXPORTS"; exit 1; }
+echo "ok   exports: the start function and the button-input hooks (src/surface.c)"
 tests/test_install.sh
 echo "all tests passed"

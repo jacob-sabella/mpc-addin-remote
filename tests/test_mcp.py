@@ -164,7 +164,7 @@ def protocol(srv, port):
     tools = r["result"]["tools"]
     names = [t["name"] for t in tools]
     want = ["screenshot", "tap", "double_tap", "long_press", "drag", "scroll", "touch", "wait_for_screen",
-            "get_screen_info", "play_notes", "send_midi", "midi_listen", "midi_status", "list_buttons", "press_button", "learn_button", "device_status", "list_files",
+            "get_screen_info", "play_notes", "send_midi", "midi_listen", "midi_status", "list_buttons", "press_button", "learn_button", "turn_knob", "button_listen", "device_status", "list_files",
             "find_files", "read_text_file"]
     check(names == want, f"tools/list names {names}")
     check(all(t["inputSchema"]["type"] == "object" and t["description"] and "readOnlyHint" in t["annotations"] for t in tools),
@@ -350,6 +350,10 @@ def buttons(srv):   # no Force here: an empty profile that says why, and presses
     check(err and "isn't a button name" in text, f"press_button: a bad name is refused: {text[:80]}")
     err, text, _ = srv.call("press_button", {"name": "PLAY", "hold_ms": 5})
     check(err, "press_button: hold_ms under 10 is refused")
+    err, text, _ = srv.call("turn_knob", {"name": "WHEEL", "steps": 1})
+    check(err, f"turn_knob without the device's buttons is an error: {text[:80]}")
+    err, text, _ = srv.call("turn_knob", {"name": "WHEEL", "steps": 0})
+    check(err, f"turn_knob: 0 steps is refused: {text[:80]}")
     err, text, _ = srv.call("learn_button", {"name": "PLAY", "timeout_ms": 1000})
     check(err, f"learn_button without the device's buttons is an error: {text[:80]}")
 
