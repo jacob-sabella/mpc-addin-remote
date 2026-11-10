@@ -58,7 +58,7 @@ sleep 0.5
 if check_port; then echo "FAIL MPC_REMOTE_ADDIN_DISABLE ignored"; kill $P; exit 1; fi
 kill $P; wait $P 2>/dev/null || true
 echo "ok   preload: MPC_REMOTE_ADDIN_DISABLE keeps it off"
-EXPORTS=$(nm -D --defined-only "$B/mpc_remote_addin.so" | awk '$2 == "T" {print $3}' | tr '\n' ' ')
+EXPORTS=$(nm -D --defined-only "$B/mpc_remote_addin.so" | awk '$2 == "T" {print $3}' | LC_ALL=C sort | tr '\n' ' ')
 [ "$EXPORTS" = "__poll_chk mpc_remote_addin_start poll snd_rawmidi_close snd_rawmidi_open snd_rawmidi_read " ] || { echo "FAIL exports: $EXPORTS"; exit 1; }
 echo "ok   exports: the start function and the button-input hooks (src/surface.c)"
 tests/test_install.sh
