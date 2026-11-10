@@ -192,11 +192,20 @@ def run(exe, full):
             check(raw(port, b"GET /screen.png?half=7&x=\xff HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 200"), "odd query values")
 
             # limits: two streams at most; max_clients=4 connections at once
+            # The stream closed above is still counted until its thread notices the client left (its next frame tick,
+            # slow under ASan), so a holder can get a 503 at first: retry until each one is really streaming.
             holders = []
             for _ in range(2):
-                c = socket.create_connection(("127.0.0.1", port), timeout=5)
-                c.sendall(b"GET /stream HTTP/1.1\r\n\r\n")
-                c.recv(100)
+                t0 = time.time()
+                while True:
+                    c = socket.create_connection(("127.0.0.1", port), timeout=5)
+                    c.sendall(b"GET /stream HTTP/1.1\r\n\r\n")
+                    head = c.recv(100)
+                    if head.startswith(b"HTTP/1.1 200") or time.time() - t0 > 5:
+                        break
+                    c.close()
+                    time.sleep(0.1)
+                check(head.startswith(b"HTTP/1.1 200"), "two streams at once are served")
                 holders.append(c)
             check(get(base + "/stream")[0] == 503, "a third stream is refused")
             idle = [socket.create_connection(("127.0.0.1", port), timeout=8) for _ in range(2)]
