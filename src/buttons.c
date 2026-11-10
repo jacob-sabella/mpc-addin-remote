@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "buttons.h"
 #include "midi.h"
+#include "surface.h"
 #include <ctype.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -28,6 +29,7 @@ static int try_inject(void)
 
 static int send_btn(int c, int p, const uint8_t *m)
 {
+    if (c < 0 && surface_active()) return surface_send(m);   // MPC's own button input, through the addin (src/surface.c)
     if (inject_fd >= 0 && c < 0)
         return write(inject_fd, m, 3) == 3 ? 0 : -1;
     return midi_send_to(c, p, m);
@@ -164,7 +166,10 @@ static int load_locked(struct button *t, int max)
         }
         fclose(f);
     }
-    if (midi_find_port(NULL, "Virtual RawMIDI", 1, &c, &p, label, sizeof label)) {
+    if (surface_active()) {
+        snprintf(status, sizeof status, "%s %d built-in, %d learned (%s).", surface_status(), builtin, n - builtin,
+                 file[0] ? file : "no profile file");
+    } else if (midi_find_port(NULL, "Virtual RawMIDI", 1, &c, &p, label, sizeof label)) {
         if (!try_inject())
             snprintf(status, sizeof status, "Sent to %s. %d built-in, %d learned (%s).", inject_path, builtin, n - builtin,
                      file[0] ? file : "no profile file");
@@ -257,7 +262,8 @@ static int resolve(const char *name, struct button *out, int *c, int *p, char *e
     pthread_mutex_unlock(&mtx);
     int i = find(t, n, norm);
     if (i < 0) { snprintf(err, en, "No button called %s. %s", norm, n ? "list_buttons shows them." : buttons_status()); return -1; }
-    if (midi_find_port(NULL, "Virtual RawMIDI", 1, c, p, NULL, 0)) {
+    if (surface_active()) *c = *p = -1;
+    else if (midi_find_port(NULL, "Virtual RawMIDI", 1, c, p, NULL, 0)) {
         if (try_inject()) { snprintf(err, en, "%s", buttons_status()); return -1; }
         *c = -1; *p = -1;
     }
@@ -310,7 +316,8 @@ int buttons_press(const char *name, int hold_ms, char *err, size_t en)
 int buttons_dial(int delta, char *err, size_t en)
 {
     int c, p;
-    if (midi_find_port(NULL, "Virtual RawMIDI", 1, &c, &p, NULL, 0)) {
+    if (surface_active()) c = p = -1;
+    else if (midi_find_port(NULL, "Virtual RawMIDI", 1, &c, &p, NULL, 0)) {
         if (try_inject()) { snprintf(err, en, "%s", buttons_status()); return -1; }
         c = -1; p = -1;
     }
@@ -332,7 +339,7 @@ int buttons_turn(const char *name, int steps, char *err, size_t en)
     if (!b.cc) { snprintf(err, en, "%s is a button, not a knob: use press_button.", b.name); return -1; }
     uint8_t m[3] = { (uint8_t)(0xB0 | (b.channel - 1)), (uint8_t)b.note, (uint8_t)(steps > 0 ? 1 : 127) };
     for (int i = 0, n = steps > 0 ? steps : -steps; i < n; i++) {
-        if (send_note(c, p, m)) { snprintf(err, en, "Sending to MPC failed: %s.", c < 0 ? "its button input is busy or closed" : midi_error()); return -1; }
+        if (send_btn(c, p, m)) { snprintf(err, en, "Sending to MPC failed: %s.", c < 0 ? "its button input is busy or closed" : midi_error()); return -1; }
         sleep_ms(8);   // the hardware's own clicks are spaced like this; the input queue holds 64
     }
     return 0;

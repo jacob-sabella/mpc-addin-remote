@@ -4,6 +4,7 @@
 
 struct conf {
     int enabled;              // enabled=0 keeps the addin loaded but idle
+    int buttons_input;        // 1: give MPC's button input a sequencer port when nothing else does (src/surface.c)
     char bind[46];            // listen address (127.0.0.1: the device only; 0.0.0.0: every interface)
     int port;
     char touch_device[64];    // auto, or /dev/input/eventN
