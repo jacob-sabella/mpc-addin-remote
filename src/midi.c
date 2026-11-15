@@ -234,7 +234,12 @@ static int take(struct midi_msg *out, int max, int ms)
         case EV_CONTINUE: m.b[0] = 0xFB; m.len = 1; break;
         case EV_STOP: m.b[0] = 0xFC; m.len = 1; break;
         case EV_CLOCK: m.b[0] = 0xF8; m.len = 1; break;
-        case EV_SYSEX: m.b[0] = 0xF0; m.len = (int)ev->data.ext.len; break;
+        case EV_SYSEX: {
+            m.b[0] = 0xF0; m.len = (int)ev->data.ext.len;
+            size_t keep = ev->data.ext.len < MIDI_SYSEX_KEEP ? ev->data.ext.len : MIDI_SYSEX_KEEP;
+            if (ev->data.ext.ptr) memcpy(m.sysex, ev->data.ext.ptr, keep);
+            break;
+        }
         default: continue;
         }
         out[k++] = m;
