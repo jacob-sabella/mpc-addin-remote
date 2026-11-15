@@ -406,6 +406,19 @@ def midi(srv):
     t.join()
     check(not err and "3 message(s)" in text and "note_on  ch 1  C3 (60)  velocity 100" in text
           and "cc ch 1  controller 1  value 32" in text and "note_off ch 1  C3 (60)" in text, f"midi_listen: {text}")
+    # sysex is listed with its bytes (issue #6), long ones cut after MIDI_SYSEX_KEEP (64) bytes
+    long_sx = "F0 " + " ".join(["01"] * 70) + " F7"
+    def send_sysex_later():
+        time.sleep(0.4)
+        subprocess.run(["aseqsend", "-p", client + ":1", "F0 7F 7F 06 02 F7"], check=False)
+        time.sleep(0.1)
+        subprocess.run(["aseqsend", "-p", client + ":1", long_sx], check=False)
+    t = threading.Thread(target=send_sysex_later)
+    t.start()
+    err, text, _ = srv.call("midi_listen", {"duration_ms": 1500})
+    t.join()
+    check(not err and "sysex (6 bytes)  F0 7F 7F 06 02 F7" in text, f"midi_listen shows sysex bytes: {text}")
+    check("sysex (72 bytes)  F0 01 01" in text and "... (8 more)" in text, f"midi_listen cuts a long sysex: {text}")
 
 
 if __name__ == "__main__":

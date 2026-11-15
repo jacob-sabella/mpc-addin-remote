@@ -23,10 +23,12 @@ int midi_find_port(const char *cname, const char *pname, int user_only, int *cli
 int midi_send_to(int client, int port, const uint8_t *note3);
 int midi_watch(int client, int port, int on);
 
+#define MIDI_SYSEX_KEEP 64
 struct midi_msg {
     int ms;                 // milliseconds since the listen started
-    uint8_t b[3];           // the message (sysex: F0, then len holds its length and only F0 is kept)
+    uint8_t b[3];           // the message (sysex: F0, and len holds its whole length)
     int len;
+    uint8_t sysex[MIDI_SYSEX_KEEP];   // sysex only: its first min(len, MIDI_SYSEX_KEEP) bytes, F0 included
 };
 // Throw away whatever arrived on In before now.
 void midi_drain(void);

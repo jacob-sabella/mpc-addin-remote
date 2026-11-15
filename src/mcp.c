@@ -585,7 +585,13 @@ static void describe(struct sb *b, const struct midi_msg *m)
     case 0xD0: sb_printf(b, "channel_pressure ch %d  %d\n", ch, m->b[1]); break;
     case 0xE0: sb_printf(b, "pitch_bend ch %d  %d\n", ch, (m->b[2] << 7 | m->b[1]) - 8192); break;
     default:
-        if (m->b[0] == 0xF0) sb_printf(b, "sysex (%d bytes)\n", m->len);
+        if (m->b[0] == 0xF0) {
+            int keep = m->len < MIDI_SYSEX_KEEP ? m->len : MIDI_SYSEX_KEEP;
+            sb_printf(b, "sysex (%d bytes) ", m->len);
+            for (int i = 0; i < keep; i++) sb_printf(b, " %02X", m->sysex[i]);
+            if (m->len > keep) sb_printf(b, " ... (%d more)", m->len - keep);
+            sb_printf(b, "\n");
+        }
         else sb_printf(b, "%s\n", m->b[0] == 0xFA ? "start" : m->b[0] == 0xFB ? "continue" : m->b[0] == 0xFC ? "stop" : "clock");
     }
 }
