@@ -49,6 +49,22 @@ struct drm_gem_close { uint32_t handle, pad; };
 #define DRM_IOCTL_MODE_MAP_DUMB     _IOWR(DRM_IOCTL_BASE, 0xB3, struct drm_mode_map_dumb)
 #define DRM_IOCTL_MODE_GETFB2       _IOWR(DRM_IOCTL_BASE, 0xCE, struct drm_mode_fb_cmd2)
 
+// Connectors and encoders: the CRTC a *connected* connector drives is the one the panel shows, which is
+// not necessarily the first CRTC that happens to have a framebuffer (an MPC Live II has a second one
+// with a 3840x800 intermediate buffer -- see open_display()).
+struct drm_mode_get_encoder {
+    uint32_t encoder_id, encoder_type, crtc_id, possible_crtcs, possible_clones;
+};
+struct drm_mode_get_connector {
+    uint64_t encoders_ptr, modes_ptr, props_ptr, prop_values_ptr;
+    uint32_t count_modes, count_props, count_encoders;
+    uint32_t encoder_id, connector_id, connector_type, connector_type_id;
+    uint32_t connection, mm_width, mm_height, subpixel, pad;
+};
+#define DRM_MODE_CONNECTED 1
+#define DRM_IOCTL_MODE_GETENCODER   _IOWR(DRM_IOCTL_BASE, 0xA6, struct drm_mode_get_encoder)
+#define DRM_IOCTL_MODE_GETCONNECTOR _IOWR(DRM_IOCTL_BASE, 0xA7, struct drm_mode_get_connector)
+
 #define FOURCC(a, b, c, d) ((uint32_t)(a) | ((uint32_t)(b) << 8) | ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
 #define FMT_XRGB8888 FOURCC('X', 'R', '2', '4')
 #define FMT_ARGB8888 FOURCC('A', 'R', '2', '4')

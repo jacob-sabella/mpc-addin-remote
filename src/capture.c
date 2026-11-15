@@ -81,6 +81,30 @@ static int fake_open(struct fbmap *m)
 }
 #endif
 
+// The CRTC that a connected connector is driving: that is the panel. 0 when none can be found
+// (then the old rule -- the first CRTC with a framebuffer -- still applies).
+static uint32_t connector_crtc(int fd)
+{
+    struct drm_mode_card_res r = { 0 };
+    if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &r) != 0 || !r.count_connectors) return 0;
+    uint32_t ids[16];
+    uint32_t n = r.count_connectors < 16 ? r.count_connectors : 16;
+    memset(&r, 0, sizeof r);
+    r.count_connectors = n;
+    r.connector_id_ptr = (uint64_t)(uintptr_t)ids;
+    if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &r) != 0) return 0;
+    if (r.count_connectors < n) n = r.count_connectors;
+    for (uint32_t k = 0; k < n; k++) {
+        struct drm_mode_get_connector c = { .connector_id = ids[k] };
+        if (ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &c) != 0) continue;
+        if (c.connection != DRM_MODE_CONNECTED || !c.encoder_id) continue;
+        struct drm_mode_get_encoder e = { .encoder_id = c.encoder_id };
+        if (ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &e) != 0) continue;
+        if (e.crtc_id) return e.crtc_id;
+    }
+    return 0;
+}
+
 // Find a CRTC that is lit (has a mode and a framebuffer) on any DRM card.
 static int open_display(void)
 {
@@ -102,14 +126,19 @@ static int open_display(void)
             r.crtc_id_ptr = (uint64_t)(uintptr_t)ids;
             if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &r) == 0) {
                 if (r.count_crtcs < n) n = r.count_crtcs;
-                for (uint32_t k = 0; k < n; k++) {
-                    struct drm_mode_crtc c = { .crtc_id = ids[k] };
-                    if (ioctl(fd, DRM_IOCTL_MODE_GETCRTC, &c) == 0 && c.fb_id && c.mode_valid) {
-                        drm_fd = fd;
-                        crtc_id = ids[k];
-                        return 0;
+                // The panel's CRTC first. On an MPC Live II a second CRTC carries a 3840x800
+                // intermediate buffer; taking "the first lit CRTC" showed noise instead of the screen.
+                const uint32_t want = connector_crtc(fd);
+                for (int pass = 0; pass < 2; pass++)
+                    for (uint32_t k = 0; k < n; k++) {
+                        if (pass == 0 && ids[k] != want) continue;
+                        struct drm_mode_crtc c = { .crtc_id = ids[k] };
+                        if (ioctl(fd, DRM_IOCTL_MODE_GETCRTC, &c) == 0 && c.fb_id && c.mode_valid) {
+                            drm_fd = fd;
+                            crtc_id = ids[k];
+                            return 0;
+                        }
                     }
-                }
             }
         }
         close(fd);
