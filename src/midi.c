@@ -331,9 +331,12 @@ int midi_send_to(int c, int p, const uint8_t *m)
 // Send what the port c:p sends to the addin's In port (on), or stop (off).
 int midi_watch(int c, int p, int on)
 {
-    if (midi_open() || !have_query) return -1;
+    if (midi_open()) return -1;   // err already says why
+    if (!have_query) { snprintf(err, sizeof err, "this libasound has no port query/subscribe functions"); return -1; }
     pthread_mutex_lock(&mtx);
     int r = on ? A.connect_from(seq, in_port, c, p) : A.disconnect_from(seq, in_port, c, p);
+    // ALSA returns -errno. Without this the caller's "Couldn't listen ...: %s." printed an empty reason (issue #5).
+    if (r < 0) snprintf(err, sizeof err, "subscribing to %d:%d failed (%s)", c, p, strerror(-r));
     pthread_mutex_unlock(&mtx);
     return r < 0 ? -1 : 0;
 }
