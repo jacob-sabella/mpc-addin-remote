@@ -170,6 +170,20 @@ scripts fill in. When the installer finds a MockbaMod card it also writes `AddOn
 to that file at every boot, and adds it there straight away; the uninstaller removes both. For another launcher like
 that, the addin has to be added to its list by hand.
 
+**HAKAI** starts MPC through `/usr/bin/az01-launch-MPC`, which sets its own `LD_PRELOAD` (`hakai_driver.so`,
+`customBufferSizeMPC.so`, `$CURSOR_SO`) and so drops the service's entry: the page answers "connection reset" and the
+tunnel says `connect failed: Connection refused`. Until the installer handles HAKAI, copy the launcher to `/data`, add
+the addin's `.so` to its `LD_PRELOAD` after `$CURSOR_SO`, and point the service at the copy with a drop-in (for
+example `/etc/systemd/system/acvs.service.d/99-hakai-addins.conf`, then `systemctl daemon-reload` and restart MPC):
+
+```
+[Service]
+ExecStart=
+ExecStart=/data/mpc-addins/az01-launch-MPC-addins
+```
+
+Reinstalling HAKAI replaces its launcher, so check the copy still matches it after an update.
+
 ### Trying it without restarting MPC
 
 DRM capture and touch injection work from any root process, so `build/standalone` runs the addin in a process of
@@ -233,6 +247,10 @@ from a separate, custom kernel module, not anything stock.
   with `turn_knob` and the page's Knobs group, not pressed. `learn_button` records notes only, so a knob's number is
   read with `button_listen` and written into `buttons.conf` by hand. Where MPC holds the buttons' port exclusively (the
   MPC Live III), `learn_button` and `button_listen` listen from inside MPC's own reads of it.
+- **MPC One:** buttons can't be learned or pressed yet. Its front panel is ALSA client "MPC One MIDI", port "MPC Studio
+  Live Private", which MPC reads directly; there is no Virtual RawMIDI port or `/dev/midi_inject` for the addin to
+  listen on or send into, so `learn_button` fails with the reason ALSA gives. Transport still works from here as MMC
+  (`send_midi` type `mmc`: play, stop, record_strobe ...) with MPC set to receive MMC.
 - Buttons that only act together with another (SHIFT, EDIT, COPY ...) do nothing pressed alone from here.
 - Real presses: PLAY plays, REC records, UNDO undoes.
 
